@@ -54,6 +54,24 @@ pub fn dogemap_event(
     })
 }
 
+/// Build a Dogetag on-chain graffiti event payload.
+pub fn dogetag_event(
+    txid: &str,
+    sender_address: &str,
+    message: &str,
+    block_height: u64,
+    block_timestamp: u32,
+) -> Value {
+    serde_json::json!({
+        "event": "dogetag.tagged",
+        "txid": txid,
+        "sender_address": sender_address,
+        "message": message,
+        "block_height": block_height,
+        "block_timestamp": block_timestamp,
+    })
+}
+
 /// Build a doge-lotto ticket event payload.
 pub fn lotto_ticket_event(
     lotto_id: &str,

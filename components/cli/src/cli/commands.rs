@@ -19,9 +19,93 @@ pub enum Protocol {
     /// doge-lotto deploy, mint, and query commands
     #[clap(subcommand)]
     Lotto(LottoCommand),
+    /// Dogetag on-chain graffiti query commands
+    #[clap(subcommand)]
+    Dogetag(DogetagCommand),
     /// Configuration file commands
     #[clap(subcommand)]
     Config(ConfigCommand),
+}
+
+// ---------------------------------------------------------------------------
+// Dogetag subcommands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand, PartialEq, Clone, Debug)]
+pub enum DogetagCommand {
+    /// List recent on-chain graffiti tags
+    #[clap(name = "list")]
+    List(DogetagListCommand),
+    /// Search tags by message content
+    #[clap(name = "search")]
+    Search(DogetagSearchCommand),
+    /// List tags left by a specific address
+    #[clap(name = "address")]
+    Address(DogetagAddressCommand),
+    /// Send DOGE to an address and burn a message into the same transaction
+    #[clap(name = "send")]
+    Send(DogetagSendCommand),
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DogetagListCommand {
+    /// Maximum number of results
+    #[clap(long, default_value = "50")]
+    pub limit: usize,
+    /// Skip this many results
+    #[clap(long, default_value = "0")]
+    pub offset: usize,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DogetagSearchCommand {
+    /// Text to search for in tag messages
+    pub query: String,
+    /// Maximum number of results
+    #[clap(long, default_value = "50")]
+    pub limit: usize,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DogetagAddressCommand {
+    /// Dogecoin address to look up tags for
+    pub address: String,
+    /// Maximum number of results
+    #[clap(long, default_value = "50")]
+    pub limit: usize,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DogetagSendCommand {
+    /// Recipient Dogecoin address
+    #[clap(long)]
+    pub to: String,
+    /// Amount of DOGE to send (e.g. 5.0)
+    #[clap(long)]
+    pub amount: f64,
+    /// Message to burn into the transaction OP_RETURN (max 80 bytes UTF-8)
+    #[clap(long)]
+    pub message: String,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
 }
 
 // ---------------------------------------------------------------------------

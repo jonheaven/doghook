@@ -2565,6 +2565,158 @@ pub struct LottoTicketInfoRow {
     pub ticket_id: String,
 }
 
+// ---------------------------------------------------------------------------
+// Dogetag — on-chain graffiti indexing
+// ---------------------------------------------------------------------------
+
+/// Insert all Dogetag messages discovered in a block.
+/// `tags`: list of (txid, sender_address, message, raw_script).
+pub async fn insert_dogetags<T: GenericClient>(
+    tags: &[(String, Option<String>, String, String)],
+    block_height: u64,
+    block_timestamp: u32,
+    client: &T,
+) -> Result<(), String> {
+    for (txid, sender_address, message, raw_script) in tags {
+        client
+            .execute(
+                "INSERT INTO dogetags
+                    (txid, block_height, block_timestamp, sender_address, message, message_bytes, raw_script)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                &[
+                    txid,
+                    &(block_height as i64),
+                    &(block_timestamp as i64),
+                    sender_address,
+                    message,
+                    &(message.len() as i32),
+                    raw_script,
+                ],
+            )
+            .await
+            .map_err(|e| format!("insert_dogetags: {e}"))?;
+    }
+    Ok(())
+}
+
+pub async fn rollback_dogetags<T: GenericClient>(
+    block_height: u64,
+    client: &T,
+) -> Result<(), String> {
+    client
+        .execute(
+            "DELETE FROM dogetags WHERE block_height = $1",
+            &[&(block_height as i64)],
+        )
+        .await
+        .map_err(|e| format!("rollback_dogetags: {e}"))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Dogetag query helpers
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct DogetagRow {
+    pub id: i64,
+    pub txid: String,
+    pub block_height: u64,
+    pub block_timestamp: u64,
+    pub sender_address: Option<String>,
+    pub message: String,
+    pub message_bytes: i32,
+}
+
+pub async fn list_dogetags<T: GenericClient>(
+    limit: usize,
+    offset: usize,
+    client: &T,
+) -> Result<Vec<DogetagRow>, String> {
+    let rows = client
+        .query(
+            "SELECT id, txid, block_height, block_timestamp, sender_address, message, message_bytes
+             FROM dogetags
+             ORDER BY block_height DESC, id DESC
+             LIMIT $1 OFFSET $2",
+            &[&(limit as i64), &(offset as i64)],
+        )
+        .await
+        .map_err(|e| format!("list_dogetags: {e}"))?;
+    Ok(rows.iter().map(|r| DogetagRow {
+        id: r.get(0),
+        txid: r.get(1),
+        block_height: r.get::<_, i64>(2) as u64,
+        block_timestamp: r.get::<_, i64>(3) as u64,
+        sender_address: r.get(4),
+        message: r.get(5),
+        message_bytes: r.get(6),
+    }).collect())
+}
+
+pub async fn search_dogetags<T: GenericClient>(
+    query: &str,
+    limit: usize,
+    client: &T,
+) -> Result<Vec<DogetagRow>, String> {
+    let pattern = format!("%{}%", query);
+    let rows = client
+        .query(
+            "SELECT id, txid, block_height, block_timestamp, sender_address, message, message_bytes
+             FROM dogetags
+             WHERE message ILIKE $1
+             ORDER BY block_height DESC, id DESC
+             LIMIT $2",
+            &[&pattern, &(limit as i64)],
+        )
+        .await
+        .map_err(|e| format!("search_dogetags: {e}"))?;
+    Ok(rows.iter().map(|r| DogetagRow {
+        id: r.get(0),
+        txid: r.get(1),
+        block_height: r.get::<_, i64>(2) as u64,
+        block_timestamp: r.get::<_, i64>(3) as u64,
+        sender_address: r.get(4),
+        message: r.get(5),
+        message_bytes: r.get(6),
+    }).collect())
+}
+
+pub async fn get_dogetags_by_address<T: GenericClient>(
+    address: &str,
+    limit: usize,
+    client: &T,
+) -> Result<Vec<DogetagRow>, String> {
+    let rows = client
+        .query(
+            "SELECT id, txid, block_height, block_timestamp, sender_address, message, message_bytes
+             FROM dogetags
+             WHERE sender_address = $1
+             ORDER BY block_height DESC, id DESC
+             LIMIT $2",
+            &[&address, &(limit as i64)],
+        )
+        .await
+        .map_err(|e| format!("get_dogetags_by_address: {e}"))?;
+    Ok(rows.iter().map(|r| DogetagRow {
+        id: r.get(0),
+        txid: r.get(1),
+        block_height: r.get::<_, i64>(2) as u64,
+        block_timestamp: r.get::<_, i64>(3) as u64,
+        sender_address: r.get(4),
+        message: r.get(5),
+        message_bytes: r.get(6),
+    }).collect())
+}
+
+pub async fn count_dogetags<T: GenericClient>(client: &T) -> Result<i64, String> {
+    let row = client
+        .query_one("SELECT COUNT(*) FROM dogetags", &[])
+        .await
+        .map_err(|e| format!("count_dogetags: {e}"))?;
+    Ok(row.get(0))
+}
+
 #[cfg(test)]
 mod test {
     use dogecoin::types::{

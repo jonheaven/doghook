@@ -20,11 +20,12 @@ use dogecoin::bitcoincore_rpc::{
 };
 use clap::Parser;
 use commands::{
-    Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand, IndexCommand,
-    LottoCommand, Protocol, ServiceCommand,
+    Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand, DogetagCommand,
+    DogetagSendCommand, IndexCommand, LottoCommand, Protocol, ServiceCommand,
 };
 use config::{generator::generate_toml_config, Config};
 use hiro_system_kit;
+use postgres::pg_pool;
 
 mod commands;
 
@@ -103,6 +104,42 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                     check_maintenance_mode(ctx);
                     let config = Config::from_file_path(&cmd.config_path)?;
                     config.assert_doginals_config()?;
+                    
+                    // Start web explorer if enabled
+                    if let Some(web_config) = &config.web {
+                        if web_config.enabled {
+                            let doginals_config = config.doginals.as_ref().unwrap();
+                            let doginals_pool = Arc::new(pg_pool(&doginals_config.db)
+                                .map_err(|e| format!("Failed to create doginals pool: {}", e))?);
+                            
+                            let drc20_pool = config.ordinals_drc20_config()
+                                .map(|drc20| pg_pool(&drc20.db))
+                                .transpose()
+                                .map_err(|e| format!("Failed to create DRCC-20 pool: {}", e))?
+                                .map(Arc::new);
+                            
+                            let dunes_pool = config.dunes.as_ref()
+                                .map(|dunes| pg_pool(&dunes.db))
+                                .transpose()
+                                .map_err(|e| format!("Failed to create Dunes pool: {}", e))?
+                                .map(Arc::new);
+                            
+                            let web_addr = format!("0.0.0.0:{}", web_config.port).parse()
+                                .map_err(|e| format!("Invalid web server address: {}", e))?;
+                            
+                            tokio::spawn(async move {
+                                if let Err(e) = crate::web::start_web_server(
+                                    web_addr,
+                                    doginals_pool,
+                                    drc20_pool,
+                                    dunes_pool,
+                                ).await {
+                                    eprintln!("Web server error: {}", e);
+                                }
+                            });
+                        }
+                    }
+                    
                     doginals_indexer::start_doginals_indexer(true, &abort_signal, &config, ctx).await?
                 }
             },
@@ -787,6 +824,145 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                 }
             }
         },
+        Protocol::Dogetag(subcmd) => {
+            // Send only needs Dogecoin Core RPC — no DB pool required.
+            if let DogetagCommand::Send(ref cmd) = subcmd {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                let ctx = Context::empty();
+                let amount_koinu = (cmd.amount * 100_000_000.0).round() as u64;
+                if amount_koinu == 0 {
+                    return Err("amount must be > 0 DOGE".into());
+                }
+                let result = broadcast_dogetag_send(&config, cmd, amount_koinu, &ctx)?;
+                if cmd.json {
+                    println!("{}", serde_json::json!({
+                        "txid": result.txid.to_string(),
+                        "to": cmd.to,
+                        "amount_koinu": result.amount_koinu,
+                        "fee_koinu": result.fee_koinu,
+                        "change_koinu": result.change_koinu,
+                        "message": result.message,
+                    }));
+                } else {
+                    println!("Tagged send broadcast successfully!");
+                    println!("  txid:    {}", result.txid);
+                    println!("  to:      {}", cmd.to);
+                    println!("  amount:  {} DOGE ({} koinu)", cmd.amount, result.amount_koinu);
+                    println!("  message: \"{}\"", result.message);
+                    println!("  fee:     {} koinu", result.fee_koinu);
+                    if result.change_koinu > 0 {
+                        println!("  change:  {} koinu", result.change_koinu);
+                    }
+                }
+                return Ok(());
+            }
+
+            use doginals_indexer::db::doginals_pg;
+            let config_path = match &subcmd {
+                DogetagCommand::List(c) => &c.config_path,
+                DogetagCommand::Search(c) => &c.config_path,
+                DogetagCommand::Address(c) => &c.config_path,
+                DogetagCommand::Send(_) => unreachable!(),
+            };
+            let config = Config::from_file_path(config_path)?;
+            let doginals_config = config.doginals.as_ref()
+                .ok_or("doginals database not configured")?;
+            let pool = pg_pool(&doginals_config.db)?;
+            let client = pool.get().await.map_err(|e| format!("pg pool: {e}"))?;
+
+            match subcmd {
+                DogetagCommand::List(cmd) => {
+                    let tags = doginals_pg::list_dogetags(cmd.limit, cmd.offset, &client).await?;
+                    if cmd.json {
+                        let json: Vec<_> = tags.iter().map(|t| serde_json::json!({
+                            "id": t.id,
+                            "txid": t.txid,
+                            "block_height": t.block_height,
+                            "block_timestamp": t.block_timestamp,
+                            "sender_address": t.sender_address,
+                            "message": t.message,
+                            "message_bytes": t.message_bytes,
+                        })).collect();
+                        println!("{}", serde_json::to_string_pretty(&json).unwrap());
+                    } else {
+                        if tags.is_empty() {
+                            println!("No dogetags indexed yet.");
+                        } else {
+                            println!("{:<12} {:<66} {:<44} {}", "Block", "TxID", "Sender", "Message");
+                            println!("{}", "-".repeat(120));
+                            for t in &tags {
+                                println!(
+                                    "{:<12} {:<66} {:<44} {}",
+                                    t.block_height,
+                                    t.txid,
+                                    t.sender_address.as_deref().unwrap_or("unknown"),
+                                    &t.message[..t.message.len().min(60)],
+                                );
+                            }
+                            println!("\n{} tag(s) shown.", tags.len());
+                        }
+                    }
+                }
+                DogetagCommand::Search(cmd) => {
+                    let tags = doginals_pg::search_dogetags(&cmd.query, cmd.limit, &client).await?;
+                    if cmd.json {
+                        let json: Vec<_> = tags.iter().map(|t| serde_json::json!({
+                            "id": t.id,
+                            "txid": t.txid,
+                            "block_height": t.block_height,
+                            "block_timestamp": t.block_timestamp,
+                            "sender_address": t.sender_address,
+                            "message": t.message,
+                            "message_bytes": t.message_bytes,
+                        })).collect();
+                        println!("{}", serde_json::to_string_pretty(&json).unwrap());
+                    } else {
+                        if tags.is_empty() {
+                            println!("No tags matching \"{}\".", cmd.query);
+                        } else {
+                            println!("{:<12} {:<44} {}", "Block", "Sender", "Message");
+                            println!("{}", "-".repeat(100));
+                            for t in &tags {
+                                println!(
+                                    "{:<12} {:<44} {}",
+                                    t.block_height,
+                                    t.sender_address.as_deref().unwrap_or("unknown"),
+                                    t.message,
+                                );
+                            }
+                            println!("\n{} tag(s) found.", tags.len());
+                        }
+                    }
+                }
+                DogetagCommand::Send(_) => unreachable!(),
+                DogetagCommand::Address(cmd) => {
+                    let tags = doginals_pg::get_dogetags_by_address(&cmd.address, cmd.limit, &client).await?;
+                    if cmd.json {
+                        let json: Vec<_> = tags.iter().map(|t| serde_json::json!({
+                            "id": t.id,
+                            "txid": t.txid,
+                            "block_height": t.block_height,
+                            "block_timestamp": t.block_timestamp,
+                            "sender_address": t.sender_address,
+                            "message": t.message,
+                            "message_bytes": t.message_bytes,
+                        })).collect();
+                        println!("{}", serde_json::to_string_pretty(&json).unwrap());
+                    } else {
+                        if tags.is_empty() {
+                            println!("No tags from address {}.", cmd.address);
+                        } else {
+                            println!("Tags from {}:", cmd.address);
+                            println!("{}", "-".repeat(80));
+                            for t in &tags {
+                                println!("  Block #{}: {}", t.block_height, t.message);
+                            }
+                            println!("\n{} tag(s) found.", tags.len());
+                        }
+                    }
+                }
+            }
+        }
         Protocol::Config(subcmd) => match subcmd {
             ConfigCommand::New(cmd) => {
                 use std::{fs::File, io::Write};
@@ -897,6 +1073,134 @@ struct AtomicLottoMintResult {
     tip_koinu: u64,
     fee_koinu: u64,
     change_koinu: u64,
+}
+
+struct DogetagSendResult {
+    txid: Txid,
+    amount_koinu: u64,
+    fee_koinu: u64,
+    change_koinu: u64,
+    message: String,
+}
+
+fn calc_tag_send_fee(msg_len: usize) -> u64 {
+    // P2PKH input (148) + payment output (34) + OP_RETURN output (8+1+1+1+msg_len)
+    // + change output (34) + overhead (10)
+    let total = 148 + 34 + 11 + msg_len + 34 + 10;
+    (total as f64 * DEFAULT_LOTTO_FEE_RATE).ceil() as u64
+}
+
+fn broadcast_dogetag_send(
+    config: &Config,
+    cmd: &DogetagSendCommand,
+    amount_koinu: u64,
+    ctx: &Context,
+) -> Result<DogetagSendResult, String> {
+    let msg_bytes = cmd.message.as_bytes();
+    if msg_bytes.len() > 80 {
+        return Err(format!(
+            "message is {} bytes, max is 80 UTF-8 bytes",
+            msg_bytes.len()
+        ));
+    }
+    if msg_bytes.is_empty() {
+        return Err("message cannot be empty".into());
+    }
+
+    let client = dogecoin::utils::bitcoind::dogecoin_get_client(&config.dogecoin, ctx);
+    let recipient_script = parse_dogecoin_address(&cmd.to)?;
+
+    let push_bytes: &bitcoin::script::PushBytes = msg_bytes.try_into()
+        .map_err(|_| format!("message too long to encode as OP_RETURN push ({} bytes)", msg_bytes.len()))?;
+    let op_return_script = ScriptBuf::builder()
+        .push_opcode(bitcoin::opcodes::all::OP_RETURN)
+        .push_slice(push_bytes)
+        .into_script();
+
+    let fee_koinu = calc_tag_send_fee(msg_bytes.len());
+    let required_koinu = amount_koinu.saturating_add(fee_koinu);
+
+    let (funding_txid, funding_vout, funding_value, funding_script) =
+        select_lotto_utxo(&client, required_koinu, false).map_err(|e| {
+            e.replace("atomic lotto mint", "tagged send")
+        })?;
+
+    let funding_koinu = funding_value.to_sat();
+    let change_koinu = funding_koinu
+        .saturating_sub(amount_koinu)
+        .saturating_sub(fee_koinu);
+
+    let mut outputs = vec![
+        TxOut {
+            value: Amount::from_sat(amount_koinu),
+            script_pubkey: recipient_script,
+        },
+        TxOut {
+            value: Amount::ZERO,
+            script_pubkey: op_return_script,
+        },
+    ];
+
+    if change_koinu > 0 {
+        let change_address: String = client
+            .call("getrawchangeaddress", &[])
+            .map_err(|e| format!("unable to get raw change address: {e}"))?;
+        outputs.push(TxOut {
+            value: Amount::from_sat(change_koinu),
+            script_pubkey: parse_dogecoin_address(&change_address)?,
+        });
+    }
+
+    let template = Transaction {
+        version: bitcoin::transaction::Version(1),
+        lock_time: LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint {
+                txid: funding_txid,
+                vout: funding_vout,
+            },
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::MAX,
+            witness: bitcoin::Witness::new(),
+        }],
+        output: outputs.clone(),
+    };
+
+    let (sig_bytes, pubkey_bytes) = sign_lotto_template(
+        &client,
+        &template,
+        funding_txid,
+        funding_vout,
+        &funding_script,
+        funding_value,
+    )?;
+
+    let final_tx = Transaction {
+        version: bitcoin::transaction::Version(1),
+        lock_time: LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint {
+                txid: funding_txid,
+                vout: funding_vout,
+            },
+            script_sig: ScriptBuf::from(build_script_sig(&[], &sig_bytes, &pubkey_bytes)),
+            sequence: Sequence::MAX,
+            witness: bitcoin::Witness::new(),
+        }],
+        output: outputs,
+    };
+
+    let txid = client
+        .send_raw_transaction(&final_tx)
+        .map_err(|e| format!("unable to broadcast tagged send transaction: {e}"))?;
+
+    Ok(DogetagSendResult {
+        txid,
+        amount_koinu,
+        fee_koinu,
+        change_koinu,
+        message: cmd.message.clone(),
+    })
 }
 
 fn broadcast_atomic_lotto_mint(

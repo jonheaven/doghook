@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod web;
 
 extern crate hiro_system_kit;
 

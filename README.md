@@ -28,6 +28,7 @@ Both projects are completely independent codebases. doghook does not import dog.
 | DNS (Dogecoin Name System) | Full — 28 namespaces, first-wins, reorg-safe | `doghook dns resolve`, `doghook dns list` |
 | Dogemap (block claims) | Full — first-wins, reorg-safe | `doghook dogemap status`, `doghook dogemap list` |
 | doge-lotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `doghook lotto deploy`, `doghook lotto mint`, `doghook lotto list`, `doghook lotto status`, `doghook lotto burn`, `doghook lotto burners` |
+| Dogetag (on-chain graffiti) | Full — OP_RETURN text messages, reorg-safe, live viewer | `doghook dogetag list`, `doghook dogetag search`, `doghook dogetag address` |
 
 ### doge-lotto
 
@@ -178,6 +179,120 @@ doghook dogemap list --config-path doghook.toml --limit 50
 
 # JSON output
 doghook dogemap status 1000000 --config-path doghook.toml --json
+
+### Dogetag — On-chain Graffiti
+
+Any Dogecoin transaction that includes an `OP_RETURN` output with valid UTF-8 text (≤ 80 bytes) is a **Dogetag** — a permanent on-chain mark that lives in the blockchain's transaction history forever.
+
+Dogetags are **not inscriptions**. They don't land in anyone's wallet. No backward traversal, no ownership, no koinu ranges. Just a message, burned into the chain.
+
+Enable in config (default `true` when section is absent):
+
+```toml
+[protocols.dogetag]
+enabled = true
+```
+
+**List recent tags:**
+```bash
+doghook dogetag list --config-path doghook.toml
+doghook dogetag list --limit 100 --json --config-path doghook.toml
+```
+
+**Search by message content:**
+```bash
+doghook dogetag search "much wow" --config-path doghook.toml
+doghook dogetag search "satoshi" --json --config-path doghook.toml
+```
+
+**Tags by address:**
+```bash
+doghook dogetag address DYourAddressHere --config-path doghook.toml
+```
+
+**Webhook event payload:**
+```json
+{
+  "event": "dogetag.tagged",
+  "txid": "abc123...",
+  "sender_address": "DYourAddress...",
+  "message": "such graffiti very chain wow",
+  "block_height": 5100000,
+  "block_timestamp": 1700000000
+}
+```
+
+The web explorer includes a live **Dogetags** tab with inline search and a clickable TxID link to the block explorer. Auto-refreshes every 5 seconds.
+
+## Web Explorer
+
+**Doghook includes a built-in web explorer** with a dark Doge-themed interface for viewing indexed data in real-time.
+
+### Quick Start
+
+1. Enable web explorer in `doghook.toml`:
+
+```toml
+[web]
+enabled = true
+port = 8080
+```
+
+2. Start the indexer service:
+
+```bash
+doghook doginals service start --config-path doghook.toml
+```
+
+3. Open your browser to **http://localhost:8080**
+
+### Features
+
+- **📜 Inscriptions** — Latest Doginals with content type, size, block height
+- **🎰 Doge-Lotto** — Active lotteries, recent tickets (with tip %), winners, payouts
+- **💰 DRC-20** — Token deployments, mints, balances
+- **⚡ Dunes** — Dunes tokens and statistics
+- **🌐 DNS** — Registered .doge names and other namespaces
+- **🗺️ Dogemap** — Claimed blocks
+- **🔥 Burners** — Burn Points leaderboard and Burners Bonus Draw entries
+
+All tabs auto-refresh every 5 seconds. Dark Kabosu green theme. Much wow.
+
+### Production Deployment
+
+For production, run behind a reverse proxy (nginx/Cloudflare) pointing at `localhost:8080`.
+
+Example nginx config:
+
+```nginx
+server {
+   listen 80;
+   server_name doghook.yourdomain.com;
+    
+   location / {
+      proxy_pass http://localhost:8080;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+   }
+}
+```
+
+Or use Cloudflare Tunnel (see launcher scripts in `C:\Users\<user>\bin\doghook-launch.bat`).
+
+### API Endpoints
+
+The web explorer also exposes JSON APIs:
+
+- `GET /api/status` — Indexer status, total inscriptions, latest block
+- `GET /api/inscriptions/recent` — Last 20 inscriptions
+- `GET /api/inscriptions?limit=50&offset=0` — Paginated inscriptions
+- `GET /api/drc20/tokens?limit=50` — DRC-20 tokens
+- `GET /api/dunes/tokens?limit=50` — Dunes tokens
+- `GET /api/lotto/tickets?limit=50` — Lotto tickets
+- `GET /api/lotto/winners?limit=50` — Lotto winners
+- `GET /health` — Health check
+
+All APIs return JSON. Use these to build custom dashboards or integrations.
 ```
 
 ## Quick Start
@@ -193,6 +308,20 @@ doghook dogemap status 1000000 --config-path doghook.toml --json
    ```bash
    export DOGE_RPC_USERNAME=youruser
    export DOGE_RPC_PASSWORD=yourpass
+   ```
+
+   PowerShell:
+
+   ```powershell
+   $env:DOGE_RPC_USERNAME="youruser"
+   $env:DOGE_RPC_PASSWORD="yourpass"
+   ```
+
+   Optional `.env` workflow (repo root):
+
+   ```bash
+   cp .env.example .env
+   # edit .env with your real DOGE_RPC_USERNAME / DOGE_RPC_PASSWORD
    ```
 
 3. Copy and edit the config:

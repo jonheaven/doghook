@@ -20,6 +20,7 @@ pub struct Config {
     pub resources: ResourcesConfig,
     pub storage: StorageConfig,
     pub metrics: Option<MetricsConfig>,
+    pub web: Option<WebConfig>,
     pub protocols: ProtocolsConfig,
     pub webhooks: WebhooksConfig,
 }
@@ -49,6 +50,7 @@ pub struct ProtocolsConfig {
     pub dns: DnsProtocolConfig,
     pub dogemap: DogemapProtocolConfig,
     pub lotto: LottoProtocolConfig,
+    pub dogetag: DogetagProtocolConfig,
 }
 
 impl Default for ProtocolsConfig {
@@ -62,6 +64,7 @@ impl Default for ProtocolsConfig {
                 burn_address: "DBurnXXXXXXXXXXXXXXXXXXXXXXX9eVvaA".to_string(),
                 protocol_dev_address: String::new(),
             },
+            dogetag: DogetagProtocolConfig { enabled: true },
         }
     }
 }
@@ -81,6 +84,11 @@ pub struct DnsProtocolConfig {
 
 #[derive(Clone, Debug)]
 pub struct DogemapProtocolConfig {
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct DogetagProtocolConfig {
     pub enabled: bool,
 }
 
@@ -142,6 +150,12 @@ pub struct StorageConfig {
 pub struct MetricsConfig {
     pub enabled: bool,
     pub prometheus_port: u16,
+}
+
+#[derive(Clone, Debug)]
+pub struct WebConfig {
+    pub enabled: bool,
+    pub port: u16,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -223,6 +237,10 @@ impl Config {
                 enabled: true,
                 prometheus_port: 9153,
             }),
+            web: Some(WebConfig {
+                enabled: true,
+                port: 8080,
+            }),
             protocols: ProtocolsConfig::default(),
             webhooks: WebhooksConfig::default(),
         }
@@ -268,6 +286,10 @@ impl Config {
 
     pub fn dogemap_enabled(&self) -> bool {
         self.protocols.dogemap.enabled
+    }
+
+    pub fn dogetag_enabled(&self) -> bool {
+        self.protocols.dogetag.enabled
     }
 
     pub fn doginals_predicates(&self) -> Option<&DoginalsPredicatesConfig> {

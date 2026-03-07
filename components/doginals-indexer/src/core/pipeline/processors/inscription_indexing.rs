@@ -9,7 +9,7 @@ use std::{
 
 use dogecoin::{
     try_info, try_warn,
-    types::{DogecoinBlockData, TransactionBytesCursor, TransactionIdentifier},
+    types::{DogecoinBlockData, OperationType, TransactionBytesCursor, TransactionIdentifier},
     utils::Context,
 };
 use config::Config;
@@ -19,8 +19,11 @@ use postgres::{pg_begin, pg_pool_client};
 
 use crate::{
     core::{
-        meta_protocols::drc20::{
-            drc20_pg, cache::Brc20MemoryCache, index::index_block_and_insert_drc20_operations,
+        meta_protocols::{
+            drc20::{
+                drc20_pg, cache::Brc20MemoryCache, index::index_block_and_insert_drc20_operations,
+            },
+            dogetag::try_parse_dogetag,
         },
         protocol::{
             inscription_parsing::{
@@ -131,6 +134,8 @@ pub async fn index_block(
         let mut dogemap_map: HashMap<u32, String> = HashMap::new();
         let mut lotto_deploy_map: HashMap<String, ParsedLottoDeploy> = HashMap::new();
         let mut lotto_mints: Vec<ParsedLottoMint> = Vec::new();
+        // Dogetags: (txid, sender_address, message, raw_script)
+        let mut dogetag_list: Vec<(String, Option<String>, String, String)> = Vec::new();
 
         // Measure inscription parsing time
         let parsing_start = std::time::Instant::now();
@@ -146,6 +151,31 @@ pub async fn index_block(
         );
         prometheus
             .metrics_record_inscription_parsing_time(parsing_start.elapsed().as_millis() as f64);
+
+        // Dogetag scan — check every tx output for OP_RETURN graffiti.
+        if config.dogetag_enabled() {
+            for tx in &block.transactions {
+                let txid = tx.transaction_identifier.get_hash_bytes_str().to_string();
+                // Attempt to extract sender address from the first Debit operation (spender).
+                let sender_address: Option<String> = tx
+                    .operations
+                    .iter()
+                    .find(|op| op.type_ == OperationType::Debit)
+                    .map(|op| op.account.address.clone());
+
+                for output in &tx.metadata.outputs {
+                    if let Some(message) = try_parse_dogetag(&output.script_pubkey) {
+                        dogetag_list.push((
+                            txid.clone(),
+                            sender_address.clone(),
+                            message,
+                            output.script_pubkey.clone(),
+                        ));
+                        break; // one tag per transaction
+                    }
+                }
+            }
+        }
 
         // Measure ordinal computation time
         let computation_start = std::time::Instant::now();
@@ -226,6 +256,34 @@ pub async fn index_block(
             if !webhook_urls.is_empty() {
                 for (block_number, inscription_id) in &dogemap_map {
                     let payload = webhooks::dogemap_event(*block_number, inscription_id, block_height, block.timestamp);
+                    webhooks::fire_webhooks(&webhook_urls, payload, ctx).await;
+                }
+            }
+        }
+
+        // Dogetags — write all tags found in this block
+        if !dogetag_list.is_empty() {
+            if let Err(e) = doginals_pg::insert_dogetags(
+                &dogetag_list,
+                block_height,
+                block.timestamp,
+                &ord_tx,
+            )
+            .await
+            {
+                return Err(format!("Failed to insert dogetags: {}", e));
+            }
+            try_info!(ctx, "Indexed {} dogetag(s) at block #{block_height}", dogetag_list.len());
+            let webhook_urls = config.webhook_urls().to_vec();
+            if !webhook_urls.is_empty() {
+                for (txid, sender, message, _) in &dogetag_list {
+                    let payload = webhooks::dogetag_event(
+                        txid,
+                        sender.as_deref().unwrap_or(""),
+                        message,
+                        block_height,
+                        block.timestamp,
+                    );
                     webhooks::fire_webhooks(&webhook_urls, payload, ctx).await;
                 }
             }
@@ -481,6 +539,7 @@ pub async fn rollback_block(
         doginals_pg::rollback_block(block_height, &ord_tx).await?;
         doginals_pg::rollback_dns_names(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogemap_claims(block_height, &ord_tx).await?;
+        doginals_pg::rollback_dogetags(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_resolutions(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_burns(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_tickets(block_height, &ord_tx).await?;

@@ -6,9 +6,9 @@ use std::{
 use bitcoin::Network;
 
 use crate::{
-    DogecoinConfig, Config, DoginalsPredicatesConfig, MetricsConfig, DoginalDrc20Config, DoginalConfig,
+    DogecoinConfig, Config, DoginalsPredicatesConfig, MetricsConfig, WebConfig, DoginalDrc20Config, DoginalConfig,
     DoginalMetaProtocolsConfig, PgDatabaseConfig, ResourcesConfig, DunesConfig, StorageConfig,
-    ProtocolsConfig, DnsProtocolConfig, DogemapProtocolConfig, LottoProtocolConfig, WebhooksConfig,
+    ProtocolsConfig, DnsProtocolConfig, DogemapProtocolConfig, DogetagProtocolConfig, LottoProtocolConfig, WebhooksConfig,
     DEFAULT_DOGECOIN_RPC_THREADS, DEFAULT_DOGECOIN_RPC_TIMEOUT, DEFAULT_INDEXER_CHANNEL_CAPACITY,
     DEFAULT_LRU_CACHE_SIZE, DEFAULT_MEMORY_AVAILABLE, DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
 };
@@ -101,12 +101,24 @@ pub struct MetricsConfigToml {
     pub prometheus_port: u16,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct WebConfigToml {
+    pub enabled: bool,
+    pub port: u16,
+}
+
 /// Per-protocol enable/disable (all default to `true` when absent).
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct ProtocolsConfigToml {
     pub dns: Option<DnsProtocolConfigToml>,
     pub dogemap: Option<DogemapProtocolConfigToml>,
     pub lotto: Option<LottoProtocolConfigToml>,
+    pub dogetag: Option<DogetagProtocolConfigToml>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct DogetagProtocolConfigToml {
+    pub enabled: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -142,6 +154,7 @@ pub struct ConfigToml {
     pub dogecoin: DogecoinConfigToml,
     pub resources: ResourcesConfigToml,
     pub metrics: Option<MetricsConfigToml>,
+    pub web: Option<WebConfigToml>,
     pub protocols: Option<ProtocolsConfigToml>,
     pub webhooks: Option<WebhooksConfigToml>,
 }
@@ -215,6 +228,11 @@ impl ConfigToml {
             prometheus_port: metrics.prometheus_port,
         });
 
+        let web = toml.web.map(|web| WebConfig {
+            enabled: web.enabled,
+            port: web.port,
+        });
+
         let protocols = {
             let p = toml.protocols.unwrap_or_default();
             ProtocolsConfig {
@@ -223,6 +241,9 @@ impl ConfigToml {
                 },
                 dogemap: DogemapProtocolConfig {
                     enabled: p.dogemap.as_ref().and_then(|d| d.enabled).unwrap_or(true),
+                },
+                dogetag: DogetagProtocolConfig {
+                    enabled: p.dogetag.as_ref().and_then(|d| d.enabled).unwrap_or(true),
                 },
                 lotto: LottoProtocolConfig {
                     enabled: p.lotto.as_ref().and_then(|l| l.enabled).unwrap_or(true),
@@ -294,6 +315,7 @@ impl ConfigToml {
                 zmq_url: toml.dogecoin.zmq_url,
             },
             metrics,
+            web,
             protocols,
             webhooks,
         };
