@@ -26,6 +26,19 @@ pub struct Config {
 pub struct DoginalConfig {
     pub db: PgDatabaseConfig,
     pub meta_protocols: Option<DoginalMetaProtocolsConfig>,
+    /// Hiro-style predicate filtering: only index inscriptions matching these rules.
+    /// When predicates.enabled = false (default), all inscriptions are indexed.
+    pub predicates: Option<DoginalsPredicatesConfig>,
+}
+
+/// Hiro-style predicate-driven selective indexing for Doginals (matches Chainhook/Ordhook design).
+#[derive(Clone, Debug, Default)]
+pub struct DoginalsPredicatesConfig {
+    pub enabled: bool,
+    /// Only index inscriptions whose content-type starts with one of these. Empty = any.
+    pub mime_types: Vec<String>,
+    /// Only index inscriptions whose body starts with one of these UTF-8 prefixes. Empty = any.
+    pub content_prefixes: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -139,6 +152,7 @@ impl Config {
                     pool_max_size: None,
                 },
                 meta_protocols: None,
+                predicates: None,
             }),
             dunes: Some(DunesConfig {
                 lru_cache_size: DEFAULT_LRU_CACHE_SIZE,
@@ -179,6 +193,10 @@ impl Config {
         config.resources.dogecoin_rpc_threads = 1;
         config.resources.cpu_core_available = 1;
         config
+    }
+
+    pub fn doginals_predicates(&self) -> Option<&DoginalsPredicatesConfig> {
+        self.doginals.as_ref()?.predicates.as_ref()
     }
 
     pub fn ordinals_drc20_config(&self) -> Option<&DoginalDrc20Config> {

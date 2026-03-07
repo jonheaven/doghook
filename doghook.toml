@@ -16,6 +16,14 @@ port = 5432
 username = "postgres"
 password = "postgres"
 
+# Hiro-style predicate-driven selective indexing (matches Chainhook/Ordhook design).
+# When enabled = false (default), all inscriptions are indexed (full backward-traversal).
+# When enabled = true, only inscriptions matching ALL non-empty filter lists are indexed.
+[doginals.predicates]
+enabled = false
+# mime_types = ["image/png", "image/jpeg", "text/plain"]  # empty = any content-type
+# content_prefixes = ["dog", "shibe", "woof", "doge"]     # empty = any body content
+
 # DRC-20 (Dogecoin's BRC-20 equivalent) configuration
 [doginals.meta_protocols.drc20]
 enabled = true

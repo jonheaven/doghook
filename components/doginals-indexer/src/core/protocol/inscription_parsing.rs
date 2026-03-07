@@ -2,7 +2,7 @@ use std::{collections::HashMap, str, str::FromStr};
 
 use bitcoin::{hash_types::Txid, ScriptBuf, Transaction, TxIn as BitcoinTxIn, Witness, OutPoint, Sequence};
 use dogecoin::{
-    try_warn,
+    try_debug, try_warn,
     types::{
         DogecoinBlockData, DogecoinNetwork, DogecoinTransactionData, BlockIdentifier,
         OrdinalInscriptionCurseType, OrdinalInscriptionNumber, OrdinalInscriptionRevealData,
@@ -264,9 +264,17 @@ pub fn parse_inscriptions_from_standardized_tx(
             }
         }
 
+        // Hiro-style predicate filtering: skip inscriptions that don't match the configured rules.
+        if let Some(predicates) = config.doginals_predicates() {
+            if !crate::core::protocol::predicate::inscription_matches_predicates(&inscription, predicates) {
+                try_debug!(ctx, "Inscription {} filtered by predicate", reveal_data.inscription_id);
+                continue;
+            }
+        }
+
         operations.push(OrdinalOperation::InscriptionRevealed(reveal_data));
     }
-    
+
     operations
 }
 

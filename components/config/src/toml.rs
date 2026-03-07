@@ -6,7 +6,7 @@ use std::{
 use bitcoin::Network;
 
 use crate::{
-    DogecoinConfig, Config, MetricsConfig, DoginalDrc20Config, DoginalConfig,
+    DogecoinConfig, Config, DoginalsPredicatesConfig, MetricsConfig, DoginalDrc20Config, DoginalConfig,
     DoginalMetaProtocolsConfig, PgDatabaseConfig, ResourcesConfig, DunesConfig, StorageConfig,
     DEFAULT_DOGECOIN_RPC_THREADS, DEFAULT_DOGECOIN_RPC_TIMEOUT, DEFAULT_INDEXER_CHANNEL_CAPACITY,
     DEFAULT_LRU_CACHE_SIZE, DEFAULT_MEMORY_AVAILABLE, DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
@@ -37,10 +37,19 @@ impl PgDatabaseConfigToml {
     }
 }
 
+/// Hiro-style predicate-driven selective indexing for Doginals (matches Chainhook/Ordhook design).
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct DoginalsPredicatesToml {
+    pub enabled: Option<bool>,
+    pub mime_types: Option<Vec<String>>,
+    pub content_prefixes: Option<Vec<String>>,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct DoginalConfigToml {
     pub db: PgDatabaseConfigToml,
     pub meta_protocols: Option<DoginalMetaProtocolsConfigToml>,
+    pub predicates: Option<DoginalsPredicatesToml>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -150,6 +159,11 @@ impl ConfigToml {
                     }),
                     None => None,
                 },
+                predicates: ordinals.predicates.map(|p| DoginalsPredicatesConfig {
+                    enabled: p.enabled.unwrap_or(false),
+                    mime_types: p.mime_types.unwrap_or_default(),
+                    content_prefixes: p.content_prefixes.unwrap_or_default(),
+                }),
             }),
             None => None,
         };
