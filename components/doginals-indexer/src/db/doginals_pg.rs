@@ -1368,6 +1368,7 @@ struct StoredLottoRow {
     lotto_id: String,
     template: LottoTemplate,
     draw_block: u64,
+    cutoff_block: u64,
     ticket_price_koinu: u64,
     prize_pool_address: String,
     fee_percent: u8,
@@ -1392,6 +1393,7 @@ impl StoredLottoRow {
             lotto_id: self.lotto_id.clone(),
             template: self.template.clone(),
             draw_block: self.draw_block,
+            cutoff_block: self.cutoff_block,
             ticket_price_koinu: self.ticket_price_koinu,
             prize_pool_address: self.prize_pool_address.clone(),
             fee_percent: self.fee_percent,
@@ -1422,14 +1424,14 @@ pub async fn insert_lotto_lotteries<T: GenericClient>(
             .execute(
                 "INSERT INTO lotto_lotteries (
                     lotto_id, inscription_id, deploy_tx_id, deploy_height, deploy_timestamp,
-                    template, draw_block, ticket_price_koinu, prize_pool_address, fee_percent,
+                          template, draw_block, cutoff_block, ticket_price_koinu, prize_pool_address, fee_percent,
                     main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
                     resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
                  ) VALUES (
                     $1, $2, $3, $4, $5,
-                    $6, $7, $8, $9, $10,
-                    $11, $12, $13, $14,
-                    $15, $16, $17
+                          $6, $7, $8, $9, $10, $11,
+                          $12, $13, $14, $15,
+                          $16, $17, $18
                  )
                  ON CONFLICT (lotto_id) DO NOTHING",
                 &[
@@ -1440,6 +1442,7 @@ pub async fn insert_lotto_lotteries<T: GenericClient>(
                     &(deploy_timestamp as i64),
                     &lotto_template_as_str(&parsed.deploy.template),
                     &(parsed.deploy.draw_block as i64),
+                    &(parsed.deploy.cutoff_block as i64),
                     &(parsed.deploy.ticket_price_koinu as i64),
                     &parsed.deploy.prize_pool_address,
                     &(parsed.deploy.fee_percent as i32),
@@ -1475,7 +1478,7 @@ pub async fn insert_lotto_tickets<T: GenericClient>(
         };
         let deploy = lottery.as_deploy();
 
-        if minted_height > lottery.draw_block {
+        if minted_height > lottery.cutoff_block {
             continue;
         }
         if !validate_mint_against_deploy(&parsed.mint, &deploy) {
@@ -1535,7 +1538,7 @@ pub async fn resolve_lotto<T: GenericClient>(
 ) -> Result<Vec<LottoWinnerRow>, String> {
     let rows = client
         .query(
-            "SELECT lotto_id, template, draw_block, ticket_price_koinu, prize_pool_address, fee_percent,
+                "SELECT lotto_id, template, draw_block, cutoff_block, ticket_price_koinu, prize_pool_address, fee_percent,
                     main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
                     resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
              FROM lotto_lotteries
@@ -1701,6 +1704,7 @@ pub struct LottoSummaryRow {
     pub deploy_timestamp: u64,
     pub template: String,
     pub draw_block: u64,
+    pub cutoff_block: u64,
     pub ticket_price_koinu: u64,
     pub prize_pool_address: String,
     pub fee_percent: u8,
@@ -1733,7 +1737,7 @@ pub async fn get_lotto_lottery<T: GenericClient>(
 ) -> Result<Option<LottoStatusRow>, String> {
     let row = client
         .query_opt(
-            "SELECT l.lotto_id, l.inscription_id, l.deploy_height, l.deploy_timestamp, l.template, l.draw_block,
+                "SELECT l.lotto_id, l.inscription_id, l.deploy_height, l.deploy_timestamp, l.template, l.draw_block, l.cutoff_block,
                     l.ticket_price_koinu, l.prize_pool_address, l.fee_percent,
                     l.main_numbers_pick, l.main_numbers_max, l.bonus_numbers_pick, l.bonus_numbers_max,
                     l.resolution_mode, l.rollover_enabled, l.guaranteed_min_prize_koinu, l.resolved, l.resolved_height,
@@ -1766,7 +1770,7 @@ pub async fn list_lotto_lotteries<T: GenericClient>(
 ) -> Result<Vec<LottoSummaryRow>, String> {
     let rows = client
         .query(
-            "SELECT l.lotto_id, l.inscription_id, l.deploy_height, l.deploy_timestamp, l.template, l.draw_block,
+                "SELECT l.lotto_id, l.inscription_id, l.deploy_height, l.deploy_timestamp, l.template, l.draw_block, l.cutoff_block,
                     l.ticket_price_koinu, l.prize_pool_address, l.fee_percent,
                     l.main_numbers_pick, l.main_numbers_max, l.bonus_numbers_pick, l.bonus_numbers_max,
                     l.resolution_mode, l.rollover_enabled, l.guaranteed_min_prize_koinu, l.resolved, l.resolved_height,
@@ -1837,7 +1841,7 @@ async fn get_stored_lotto<T: GenericClient>(
 ) -> Result<Option<StoredLottoRow>, String> {
     let row = client
         .query_opt(
-            "SELECT lotto_id, template, draw_block, ticket_price_koinu, prize_pool_address, fee_percent,
+                "SELECT lotto_id, template, draw_block, cutoff_block, ticket_price_koinu, prize_pool_address, fee_percent,
                     main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
                     resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
              FROM lotto_lotteries
@@ -1884,6 +1888,7 @@ fn stored_lotto_from_row(row: &tokio_postgres::Row) -> Result<StoredLottoRow, St
         lotto_id: row.get("lotto_id"),
         template: lotto_template_from_str(row.get::<_, String>("template").as_str())?,
         draw_block: row.get::<_, i64>("draw_block") as u64,
+        cutoff_block: row.get::<_, i64>("cutoff_block") as u64,
         ticket_price_koinu: row.get::<_, i64>("ticket_price_koinu") as u64,
         prize_pool_address: row.get("prize_pool_address"),
         fee_percent: row.get::<_, i32>("fee_percent") as u8,
@@ -1911,6 +1916,7 @@ fn lotto_summary_from_row(row: &tokio_postgres::Row) -> LottoSummaryRow {
         deploy_timestamp: row.get::<_, i64>("deploy_timestamp") as u64,
         template: row.get("template"),
         draw_block: row.get::<_, i64>("draw_block") as u64,
+        cutoff_block: row.get::<_, i64>("cutoff_block") as u64,
         ticket_price_koinu: row.get::<_, i64>("ticket_price_koinu") as u64,
         prize_pool_address: row.get("prize_pool_address"),
         fee_percent: row.get::<_, i32>("fee_percent") as u8,

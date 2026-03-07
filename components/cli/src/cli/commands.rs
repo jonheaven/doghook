@@ -129,6 +129,9 @@ pub struct LottoDeployCommand {
     /// Future draw block height
     #[clap(long)]
     pub draw_block: u64,
+    /// Optional ticket sales cutoff block (default: draw_block - 10)
+    #[clap(long)]
+    pub cutoff_block: Option<u64>,
     /// Ticket price in koinu
     #[clap(long)]
     pub ticket_price_koinu: u64,

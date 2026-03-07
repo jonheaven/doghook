@@ -244,11 +244,23 @@ pub async fn index_block(
             }
         }
 
-        let inserted_lotto_tickets = if !lotto_mints.is_empty() {
+        // Early cutoff filter for deploys discovered in this same block.
+        let cutoff_filtered_lotto_mints: Vec<ParsedLottoMint> = lotto_mints
+            .into_iter()
+            .filter(|parsed| {
+                lotto_deploy_map
+                    .get(&parsed.mint.lotto_id)
+                    .map(|deploy| block_height <= deploy.deploy.cutoff_block)
+                    .unwrap_or(true)
+            })
+            .collect();
+
+        let inserted_lotto_tickets = if !cutoff_filtered_lotto_mints.is_empty() {
             // Ticket insertion re-validates the mint against the stored deploy and
-            // checks the prize-pool payment on this same transaction's outputs.
+            // checks the prize-pool payment on this same transaction's outputs,
+            // and enforces persisted deploy cutoff_block.
             match doginals_pg::insert_lotto_tickets(
-                &lotto_mints,
+                &cutoff_filtered_lotto_mints,
                 block_height,
                 block.timestamp,
                 &ord_tx,

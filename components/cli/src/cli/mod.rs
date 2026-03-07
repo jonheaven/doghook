@@ -305,6 +305,18 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
         Protocol::Lotto(subcmd) => match subcmd {
             LottoCommand::Deploy(cmd) => {
                 let resolution_mode = normalize_resolution_mode(&cmd.resolution_mode)?;
+                if cmd.draw_block <= 10 && cmd.cutoff_block.is_none() {
+                    return Err(
+                        "draw_block must be > 10 when cutoff_block is omitted (default cutoff is draw_block - 10)"
+                            .into(),
+                    );
+                }
+                let cutoff_block = cmd
+                    .cutoff_block
+                    .unwrap_or_else(|| cmd.draw_block.saturating_sub(10));
+                if cutoff_block == 0 || cutoff_block >= cmd.draw_block {
+                    return Err("cutoff_block must be > 0 and strictly less than draw_block".into());
+                }
                 if !(0..=10).contains(&cmd.fee_percent) {
                     return Err("fee_percent must be between 0 and 10".into());
                 }
@@ -316,6 +328,7 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                     "op": "deploy",
                     "lotto_id": cmd.lotto_id,
                     "draw_block": cmd.draw_block,
+                    "cutoff_block": cutoff_block,
                     "ticket_price_koinu": cmd.ticket_price_koinu,
                     "prize_pool_address": cmd.prize_pool_address,
                     "fee_percent": cmd.fee_percent,
@@ -342,6 +355,13 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                 let Some(status) = doginals_indexer::lotto_status(&cmd.lotto_id, &config).await? else {
                     return Err(format!("Lotto not found: {}", cmd.lotto_id));
                 };
+                let chain_tip = dogecoin::utils::bitcoind::dogecoin_get_chain_tip(&config.dogecoin, ctx);
+                if chain_tip.index > status.summary.cutoff_block {
+                    return Err(format!(
+                        "ticket sales closed for {} at block {} (current tip #{})",
+                        cmd.lotto_id, status.summary.cutoff_block, chain_tip.index
+                    ));
+                }
 
                 let seed_numbers = if let Some(seed_numbers) = &cmd.seed_numbers {
                     parse_seed_numbers_for_lotto(
@@ -413,8 +433,13 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
             LottoCommand::Status(cmd) => {
                 let config = Config::from_file_path(&cmd.config_path)?;
                 config.assert_doginals_config()?;
+                let chain_tip = dogecoin::utils::bitcoind::dogecoin_get_chain_tip(&config.dogecoin, ctx);
                 match doginals_indexer::lotto_status(&cmd.lotto_id, &config).await? {
                     Some(row) => {
+                        let blocks_remaining = row
+                            .summary
+                            .cutoff_block
+                            .saturating_sub(chain_tip.index);
                         if cmd.json {
                             let winners: Vec<_> = row
                                 .winners
@@ -442,6 +467,8 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                                     "deploy_height": row.summary.deploy_height,
                                     "deploy_timestamp": row.summary.deploy_timestamp,
                                     "draw_block": row.summary.draw_block,
+                                    "cutoff_block": row.summary.cutoff_block,
+                                    "tickets_close_eta_minutes": blocks_remaining,
                                     "ticket_price_koinu": row.summary.ticket_price_koinu,
                                     "prize_pool_address": row.summary.prize_pool_address,
                                     "fee_percent": row.summary.fee_percent,
@@ -463,6 +490,11 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                             println!("Inscription ID:         {}", row.summary.inscription_id);
                             println!("Deploy Height:          {}", row.summary.deploy_height);
                             println!("Draw Block:             {}", row.summary.draw_block);
+                            println!(
+                                "Tickets close at block {} (~{} minutes)",
+                                row.summary.cutoff_block,
+                                blocks_remaining
+                            );
                             println!("Ticket Price (koinu):   {}", row.summary.ticket_price_koinu);
                             println!("Prize Pool Address:     {}", row.summary.prize_pool_address);
                             println!("Fee Percent:            {}", row.summary.fee_percent);

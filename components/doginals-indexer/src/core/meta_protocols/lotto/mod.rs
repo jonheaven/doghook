@@ -69,6 +69,7 @@ pub struct LottoDeploy {
     pub lotto_id: String,
     pub template: LottoTemplate,
     pub draw_block: u64,
+    pub cutoff_block: u64,
     pub ticket_price_koinu: u64,
     pub prize_pool_address: String,
     pub fee_percent: u8,
@@ -93,6 +94,7 @@ struct RawDeploy {
     lotto_id: Option<String>,
     template: Option<LottoTemplate>,
     draw_block: Option<u64>,
+    cutoff_block: Option<u64>,
     ticket_price_koinu: Option<u64>,
     prize_pool_address: Option<String>,
     fee_percent: Option<u8>,
@@ -122,6 +124,9 @@ pub fn try_parse_lotto_deploy(body: &[u8]) -> Option<LottoDeploy> {
     let lotto_id = normalize_lotto_id(raw.lotto_id?)?;
     let template = raw.template?;
     let draw_block = raw.draw_block?;
+    let cutoff_block = raw
+        .cutoff_block
+        .unwrap_or_else(|| draw_block.saturating_sub(10));
     let ticket_price_koinu = raw.ticket_price_koinu?;
     let prize_pool_address = normalize_prize_pool_address(raw.prize_pool_address?)?;
     let fee_percent = raw.fee_percent?;
@@ -131,7 +136,12 @@ pub fn try_parse_lotto_deploy(body: &[u8]) -> Option<LottoDeploy> {
     let rollover_enabled = raw.rollover_enabled?;
     let guaranteed_min_prize_koinu = raw.guaranteed_min_prize_koinu;
 
-    if draw_block == 0 || ticket_price_koinu == 0 || fee_percent > 10 {
+    if draw_block == 0
+        || cutoff_block == 0
+        || cutoff_block >= draw_block
+        || ticket_price_koinu == 0
+        || fee_percent > 10
+    {
         return None;
     }
 
@@ -150,6 +160,7 @@ pub fn try_parse_lotto_deploy(body: &[u8]) -> Option<LottoDeploy> {
         lotto_id,
         template,
         draw_block,
+        cutoff_block,
         ticket_price_koinu,
         prize_pool_address,
         fee_percent,

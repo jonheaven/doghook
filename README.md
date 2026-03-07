@@ -33,6 +33,21 @@ Both projects are completely independent codebases. doghook does not import dog.
 
 `doghook lotto mint` now broadcasts one atomic transaction that both pays the deploy's `prize_pool_address` the exact `ticket_price_koinu` amount and inscribes the `doge-lotto` ticket JSON in the same tx, so the indexer can verify payment trustlessly.
 
+Example deploy payload with explicit ticket cutoff (if omitted, defaults to `draw_block - 10`):
+
+```bash
+doghook lotto deploy \
+   --type doge-69-420 \
+   --draw-block 6200000 \
+   --cutoff-block 6199990 \
+   --ticket-price-koinu 100000000 \
+   --prize-pool-address Dxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
+   --fee-percent 0 \
+   --resolution-mode closest_wins \
+   --rollover-enabled \
+   --json
+```
+
 ### DNS — Dogecoin Name System
 
 Inscriptions whose body is `label.namespace` (e.g. `satoshi.doge`).
