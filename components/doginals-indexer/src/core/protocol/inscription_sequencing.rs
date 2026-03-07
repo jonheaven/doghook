@@ -357,11 +357,12 @@ fn get_transactions_to_process(
 
 pub fn get_jubilee_block_height(network: &Network) -> u64 {
     match network {
-        // Dogecoin has no separate jubilee fork height in the `dog` indexer;
-        // treat jubilee as first inscription height.
-        Network::Bitcoin => 4_600_000,
+        // Dogecoin has no Ordinals "Jubilee" fork event. Returning u64::MAX disables
+        // the sequence_cursor.reset() call that would otherwise fire at the wrong height.
+        // Update this if/when the Doginals community defines a jubilee-equivalent height.
+        Network::Bitcoin => u64::MAX,
         Network::Regtest => 0,
-        Network::Testnet | Network::Testnet4 => 4_250_000,
+        Network::Testnet | Network::Testnet4 => u64::MAX,
         // Dogecoin has no signet in core.
         Network::Signet => u64::MAX,
     }

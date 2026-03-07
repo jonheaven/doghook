@@ -19,7 +19,7 @@ use super::{
 };
 use crate::db::{
     cache::{
-        rune_validation::rune_etching_has_valid_commit, utils::input_rune_balances_from_tx_inputs,
+        dune_validation::rune_etching_has_valid_commit, utils::input_rune_balances_from_tx_inputs,
     },
     models::{
         db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry,

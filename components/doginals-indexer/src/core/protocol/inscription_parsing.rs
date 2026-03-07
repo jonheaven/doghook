@@ -23,6 +23,10 @@ use crate::core::meta_protocols::drc20::{
     parser::{parse_drc20_operation, ParsedDrc20Operation},
 };
 
+/// Bitcoin/Taproot only — Dogecoin has no witness data.
+/// This path is never reached during Dogecoin indexing; `parse_inscriptions_from_standardized_tx`
+/// handles all Dogecoin inscription parsing via script_sig + `from_transactions_dogecoin`.
+#[allow(dead_code)]
 pub fn parse_inscriptions_from_witness(
     input_index: usize,
     witness_bytes: Vec<Vec<u8>>,
