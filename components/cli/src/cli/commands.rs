@@ -16,6 +16,9 @@ pub enum Protocol {
     /// Dogemap (block claim) query commands
     #[clap(subcommand)]
     Dogemap(DogemapCommand),
+    /// doge-lotto deploy, mint, and query commands
+    #[clap(subcommand)]
+    Lotto(LottoCommand),
     /// Configuration file commands
     #[clap(subcommand)]
     Config(ConfigCommand),
@@ -88,6 +91,101 @@ pub struct DogemapStatusCommand {
 
 #[derive(Parser, PartialEq, Clone, Debug)]
 pub struct DogemapListCommand {
+    /// Maximum number of results
+    #[clap(long, default_value = "100")]
+    pub limit: usize,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+// ---------------------------------------------------------------------------
+// doge-lotto subcommands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand, PartialEq, Clone, Debug)]
+pub enum LottoCommand {
+    /// Build a compact doge-lotto deploy inscription JSON payload
+    #[clap(name = "deploy")]
+    Deploy(LottoDeployCommand),
+    /// Build a compact doge-lotto mint inscription JSON payload
+    #[clap(name = "mint")]
+    Mint(LottoMintCommand),
+    /// Show deployment and winner status for a lotto_id
+    #[clap(name = "status")]
+    Status(LottoStatusCommand),
+    /// List indexed lottos
+    #[clap(name = "list")]
+    List(LottoListCommand),
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct LottoDeployCommand {
+    /// Lotto identifier to deploy (e.g. doge-69-420, doge-max, my-mini-lotto-abc)
+    #[clap(long = "type")]
+    pub lotto_id: String,
+    /// Future draw block height
+    #[clap(long)]
+    pub draw_block: u64,
+    /// Ticket price in koinu
+    #[clap(long)]
+    pub ticket_price_koinu: u64,
+    /// Prize pool address to receive ticket payments
+    #[clap(long)]
+    pub prize_pool_address: String,
+    /// Fee percent for mini-lottos (0-10). doge-69-420 and doge-max must remain 0.
+    #[clap(long, default_value = "0")]
+    pub fee_percent: u8,
+    /// Resolution mode: always_winner | closest_wins | exact_only_with_rollover
+    #[clap(long)]
+    pub resolution_mode: String,
+    /// Enable rollover when the resolution mode allows it
+    #[clap(long)]
+    pub rollover_enabled: bool,
+    /// Optional guaranteed minimum prize in koinu
+    #[clap(long)]
+    pub guaranteed_min_prize_koinu: Option<u64>,
+    /// Output as JSON wrapper instead of raw inscription payload
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct LottoMintCommand {
+    /// Lotto identifier to mint against
+    #[clap(long = "lotto")]
+    pub lotto_id: String,
+    /// Optional ticket id. Defaults to a generated id.
+    #[clap(long)]
+    pub ticket_id: Option<String>,
+    /// Generate 69 random unique numbers in [1, 420]
+    #[clap(long)]
+    pub quickpick: bool,
+    /// Comma-separated seed numbers. Must contain exactly 69 unique numbers in [1, 420].
+    #[clap(long)]
+    pub seed_numbers: Option<String>,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON wrapper instead of raw inscription payload
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct LottoStatusCommand {
+    /// Lotto id to query
+    pub lotto_id: String,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct LottoListCommand {
     /// Maximum number of results
     #[clap(long, default_value = "100")]
     pub limit: usize,

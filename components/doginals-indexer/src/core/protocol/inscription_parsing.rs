@@ -4,7 +4,7 @@ use bitcoin::{hash_types::Txid, ScriptBuf, Transaction, TxIn as BitcoinTxIn, Wit
 use dogecoin::{
     try_debug, try_warn,
     types::{
-        DogecoinBlockData, DogecoinNetwork, DogecoinTransactionData, BlockIdentifier,
+        DogecoinBlockData, DogecoinNetwork, DogecoinTransactionData, BlockIdentifier, TxOut,
         OrdinalInscriptionCurseType, OrdinalInscriptionNumber, OrdinalInscriptionRevealData,
         OrdinalOperation,
     },
@@ -24,6 +24,30 @@ use crate::core::meta_protocols::drc20::{
     drc20_activation_height,
     parser::{parse_drc20_operation, ParsedDrc20Operation},
 };
+use crate::core::meta_protocols::lotto::{
+    try_parse_lotto_deploy, try_parse_lotto_mint, LottoDeploy, LottoMint,
+};
+
+#[derive(Debug, Clone)]
+pub struct ParsedLottoDeploy {
+    pub inscription_id: String,
+    pub tx_id: String,
+    pub deploy: LottoDeploy,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedLottoOutput {
+    pub value: u64,
+    pub script_pubkey: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedLottoMint {
+    pub inscription_id: String,
+    pub tx_id: String,
+    pub outputs: Vec<ParsedLottoOutput>,
+    pub mint: LottoMint,
+}
 
 /// Bitcoin/Taproot only — Dogecoin has no witness data.
 /// This path is never reached during Dogecoin indexing; `parse_inscriptions_from_standardized_tx`
@@ -122,6 +146,8 @@ pub fn parse_inscriptions_from_standardized_tx(
     drc20_operation_map: &mut HashMap<String, ParsedDrc20Operation>,
     dns_map: &mut HashMap<String, String>,
     dogemap_map: &mut HashMap<u32, String>,
+    lotto_deploy_map: &mut HashMap<String, ParsedLottoDeploy>,
+    lotto_mints: &mut Vec<ParsedLottoMint>,
     config: &Config,
     ctx: &Context,
 ) -> Vec<OrdinalOperation> {
@@ -288,6 +314,40 @@ pub fn parse_inscriptions_from_standardized_tx(
             }
         }
 
+        // doge-lotto detection mirrors DNS/Dogemap: parse before global predicates so
+        // protocol activity is never dropped by selective indexing rules.
+        if config.lotto_enabled()
+            && crate::core::protocol::predicate::inscription_matches_content_prefixes(
+                &inscription,
+                &config.protocols.lotto.content_prefixes,
+            )
+        {
+            if let Some(body) = inscription.body.as_ref() {
+                if let Some(deploy) = try_parse_lotto_deploy(body) {
+                    lotto_deploy_map
+                        .entry(deploy.lotto_id.clone())
+                        .or_insert_with(|| ParsedLottoDeploy {
+                            inscription_id: reveal_data.inscription_id.clone(),
+                            tx_id: tx.transaction_identifier.get_hash_bytes_str().to_string(),
+                            deploy,
+                        });
+                } else if let Some(mint) = try_parse_lotto_mint(body) {
+                    lotto_mints.push(ParsedLottoMint {
+                        inscription_id: reveal_data.inscription_id.clone(),
+                        tx_id: tx.transaction_identifier.get_hash_bytes_str().to_string(),
+                        outputs: tx
+                            .metadata
+                            .outputs
+                            .iter()
+                            .cloned()
+                            .map(parsed_lotto_output_from_txout)
+                            .collect(),
+                        mint,
+                    });
+                }
+            }
+        }
+
         // Hiro-style predicate filtering: skip inscriptions that don't match the configured rules.
         if let Some(predicates) = config.doginals_predicates() {
             if !crate::core::protocol::predicate::inscription_matches_predicates(&inscription, predicates) {
@@ -302,11 +362,20 @@ pub fn parse_inscriptions_from_standardized_tx(
     operations
 }
 
+fn parsed_lotto_output_from_txout(output: TxOut) -> ParsedLottoOutput {
+    ParsedLottoOutput {
+        value: output.value,
+        script_pubkey: output.script_pubkey,
+    }
+}
+
 pub fn parse_inscriptions_in_standardized_block(
     block: &mut DogecoinBlockData,
     drc20_operation_map: &mut HashMap<String, ParsedDrc20Operation>,
     dns_map: &mut HashMap<String, String>,
     dogemap_map: &mut HashMap<u32, String>,
+    lotto_deploy_map: &mut HashMap<String, ParsedLottoDeploy>,
+    lotto_mints: &mut Vec<ParsedLottoMint>,
     config: &Config,
     ctx: &Context,
 ) {
@@ -318,6 +387,8 @@ pub fn parse_inscriptions_in_standardized_block(
             drc20_operation_map,
             dns_map,
             dogemap_map,
+            lotto_deploy_map,
+            lotto_mints,
             config,
             ctx,
         );
@@ -353,7 +424,16 @@ mod test {
                     .build(),
             )
             .build();
-        parse_inscriptions_in_standardized_block(&mut block, &mut HashMap::new(), &mut HashMap::new(), &mut HashMap::new(), &config, &ctx);
+        parse_inscriptions_in_standardized_block(
+            &mut block,
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            &mut Vec::new(),
+            &config,
+            &ctx,
+        );
         let OrdinalOperation::InscriptionRevealed(reveal) =
             &block.transactions[0].metadata.ordinal_operations[0]
         else {

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use bitcoin::ScriptBuf;
 use dogecoin::types::{
     DogecoinBlockData, BlockIdentifier, OrdinalInscriptionNumber, OrdinalOperation,
     TransactionIdentifier,
@@ -17,7 +18,12 @@ use super::models::{
     DbKoinu,
 };
 use crate::core::protocol::{
+    inscription_parsing::{ParsedLottoDeploy, ParsedLottoMint},
     koinu_numbering::TraversalResult, koinu_tracking::WatchedSatpoint,
+};
+use crate::core::meta_protocols::lotto::{
+    derive_draw_for_deploy, score_ticket, validate_mint_against_deploy, LottoDeploy, LottoDraw,
+    LottoTemplate, NumberConfig, ResolutionMode,
 };
 
 embed_migrations!("../../migrations/doginals");
@@ -1325,6 +1331,947 @@ pub async fn count_dogemap_claims<T: GenericClient>(client: &T) -> Result<i64, S
         .await
         .map_err(|e| format!("count_dogemap_claims: {e}"))?;
     Ok(row.get(0))
+}
+
+// ---------------------------------------------------------------------------
+// doge-lotto
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct LottoWinnerRow {
+    pub lotto_id: String,
+    pub inscription_id: String,
+    pub ticket_id: String,
+    pub resolved_height: u64,
+    pub rank: u32,
+    pub score: u64,
+    pub payout_bps: u32,
+    pub payout_koinu: u64,
+    pub seed_numbers: Vec<u16>,
+    pub drawn_numbers: Vec<u16>,
+    pub bonus_drawn_numbers: Vec<u16>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LottoTicketRow {
+    pub lotto_id: String,
+    pub inscription_id: String,
+    pub ticket_id: String,
+    pub tx_id: String,
+    pub minted_height: u64,
+    pub minted_timestamp: u64,
+    pub seed_numbers: Vec<u16>,
+}
+
+#[derive(Debug, Clone)]
+struct StoredLottoRow {
+    lotto_id: String,
+    template: LottoTemplate,
+    draw_block: u64,
+    ticket_price_koinu: u64,
+    prize_pool_address: String,
+    fee_percent: u8,
+    main_numbers: NumberConfig,
+    bonus_numbers: NumberConfig,
+    resolution_mode: ResolutionMode,
+    rollover_enabled: bool,
+    guaranteed_min_prize_koinu: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct StoredTicketRow {
+    inscription_id: String,
+    ticket_id: String,
+    seed_numbers: Vec<u16>,
+    minted_height: u64,
+}
+
+impl StoredLottoRow {
+    fn as_deploy(&self) -> LottoDeploy {
+        LottoDeploy {
+            lotto_id: self.lotto_id.clone(),
+            template: self.template.clone(),
+            draw_block: self.draw_block,
+            ticket_price_koinu: self.ticket_price_koinu,
+            prize_pool_address: self.prize_pool_address.clone(),
+            fee_percent: self.fee_percent,
+            main_numbers: self.main_numbers.clone(),
+            bonus_numbers: self.bonus_numbers.clone(),
+            resolution_mode: self.resolution_mode.clone(),
+            rollover_enabled: self.rollover_enabled,
+            guaranteed_min_prize_koinu: self.guaranteed_min_prize_koinu,
+        }
+    }
+}
+
+pub async fn insert_lotto_lotteries<T: GenericClient>(
+    lotto_deploy_map: &HashMap<String, ParsedLottoDeploy>,
+    deploy_height: u64,
+    deploy_timestamp: u32,
+    client: &T,
+) -> Result<(), String> {
+    for parsed in lotto_deploy_map.values() {
+        if parsed.deploy.draw_block <= deploy_height {
+            continue;
+        }
+        if special_lotto_requires_zero_fee(&parsed.deploy.lotto_id) && parsed.deploy.fee_percent != 0 {
+            continue;
+        }
+
+        client
+            .execute(
+                "INSERT INTO lotto_lotteries (
+                    lotto_id, inscription_id, deploy_tx_id, deploy_height, deploy_timestamp,
+                    template, draw_block, ticket_price_koinu, prize_pool_address, fee_percent,
+                    main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
+                    resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
+                 ) VALUES (
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9, $10,
+                    $11, $12, $13, $14,
+                    $15, $16, $17
+                 )
+                 ON CONFLICT (lotto_id) DO NOTHING",
+                &[
+                    &parsed.deploy.lotto_id,
+                    &parsed.inscription_id,
+                    &parsed.tx_id,
+                    &(deploy_height as i64),
+                    &(deploy_timestamp as i64),
+                    &lotto_template_as_str(&parsed.deploy.template),
+                    &(parsed.deploy.draw_block as i64),
+                    &(parsed.deploy.ticket_price_koinu as i64),
+                    &parsed.deploy.prize_pool_address,
+                    &(parsed.deploy.fee_percent as i32),
+                    &(parsed.deploy.main_numbers.pick as i32),
+                    &(parsed.deploy.main_numbers.max as i32),
+                    &(parsed.deploy.bonus_numbers.pick as i32),
+                    &(parsed.deploy.bonus_numbers.max as i32),
+                    &resolution_mode_as_str(&parsed.deploy.resolution_mode),
+                    &parsed.deploy.rollover_enabled,
+                    &parsed
+                        .deploy
+                        .guaranteed_min_prize_koinu
+                        .map(|value| value as i64),
+                ],
+            )
+            .await
+            .map_err(|e| format!("insert_lotto_lotteries: {e}"))?;
+    }
+
+    Ok(())
+}
+
+pub async fn insert_lotto_tickets<T: GenericClient>(
+    lotto_mints: &[ParsedLottoMint],
+    minted_height: u64,
+    minted_timestamp: u32,
+    client: &T,
+) -> Result<Vec<LottoTicketRow>, String> {
+    let mut inserted = Vec::new();
+    for parsed in lotto_mints {
+        let Some(lottery) = get_stored_lotto(&parsed.mint.lotto_id, client).await? else {
+            continue;
+        };
+        let deploy = lottery.as_deploy();
+
+        if minted_height > lottery.draw_block {
+            continue;
+        }
+        if !validate_mint_against_deploy(&parsed.mint, &deploy) {
+            continue;
+        }
+
+        if !tx_outputs_match_prize_payment(
+            &parsed.outputs,
+            &lottery.prize_pool_address,
+            lottery.ticket_price_koinu,
+        ) {
+            continue;
+        }
+
+        let seed_numbers = seed_numbers_to_i32(&parsed.mint.seed_numbers);
+        let inserted_row = client
+            .query_opt(
+                "INSERT INTO lotto_tickets (
+                    inscription_id, lotto_id, ticket_id, tx_id, minted_height, minted_timestamp, seed_numbers
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 ON CONFLICT DO NOTHING
+                 RETURNING inscription_id",
+                &[
+                    &parsed.inscription_id,
+                    &parsed.mint.lotto_id,
+                    &parsed.mint.ticket_id,
+                    &parsed.tx_id,
+                    &(minted_height as i64),
+                    &(minted_timestamp as i64),
+                    &seed_numbers,
+                ],
+            )
+            .await
+            .map_err(|e| format!("insert_lotto_tickets: {e}"))?;
+
+        if inserted_row.is_some() {
+            inserted.push(LottoTicketRow {
+                lotto_id: parsed.mint.lotto_id.clone(),
+                inscription_id: parsed.inscription_id.clone(),
+                ticket_id: parsed.mint.ticket_id.clone(),
+                tx_id: parsed.tx_id.clone(),
+                minted_height,
+                minted_timestamp: minted_timestamp as u64,
+                seed_numbers: parsed.mint.seed_numbers.clone(),
+            });
+        }
+    }
+
+    Ok(inserted)
+}
+
+pub async fn resolve_lotto<T: GenericClient>(
+    resolved_height: u64,
+    resolved_block_hash: &str,
+    resolved_timestamp: u32,
+    client: &T,
+) -> Result<Vec<LottoWinnerRow>, String> {
+    let rows = client
+        .query(
+            "SELECT lotto_id, template, draw_block, ticket_price_koinu, prize_pool_address, fee_percent,
+                    main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
+                    resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
+             FROM lotto_lotteries
+             WHERE resolved = FALSE AND draw_block + 1 = $1
+             ORDER BY deploy_height ASC, lotto_id ASC",
+            &[&(resolved_height as i64)],
+        )
+        .await
+        .map_err(|e| format!("resolve_lotto (load lotteries): {e}"))?;
+
+    let mut resolved_winners = Vec::new();
+    for row in rows {
+        let lottery = stored_lotto_from_row(&row)?;
+        let tickets = get_lotto_tickets_for_resolution(&lottery.lotto_id, lottery.draw_block, client).await?;
+        let draw = derive_draw_for_deploy(resolved_block_hash, &lottery.as_deploy());
+        let verified_ticket_count = tickets.len() as u64;
+        let verified_sales_koinu = verified_ticket_count.saturating_mul(lottery.ticket_price_koinu);
+        let fee_koinu = verified_sales_koinu.saturating_mul(lottery.fee_percent as u64) / 100;
+        let mut net_prize_koinu = verified_sales_koinu.saturating_sub(fee_koinu);
+        if let Some(minimum) = lottery.guaranteed_min_prize_koinu {
+            net_prize_koinu = net_prize_koinu.max(minimum);
+        }
+
+        let (winner_rows, rollover_occurred) = resolve_lottery_winners(
+            &lottery,
+            &tickets,
+            &draw,
+            resolved_height,
+            net_prize_koinu,
+        );
+
+        client
+            .execute(
+                "UPDATE lotto_lotteries
+                 SET resolved = TRUE,
+                     resolved_height = $2,
+                     resolved_timestamp = $3,
+                     resolved_block_hash = $4,
+                     drawn_numbers = $5,
+                     bonus_drawn_numbers = $6,
+                     verified_ticket_count = $7,
+                     verified_sales_koinu = $8,
+                     fee_koinu = $9,
+                     net_prize_koinu = $10,
+                     rollover_occurred = $11
+                 WHERE lotto_id = $1",
+                &[
+                    &lottery.lotto_id,
+                    &(resolved_height as i64),
+                    &(resolved_timestamp as i64),
+                    &resolved_block_hash.trim_start_matches("0x"),
+                    &seed_numbers_to_i32(&draw.main_numbers),
+                    &seed_numbers_to_i32(&draw.bonus_numbers),
+                    &(verified_ticket_count as i64),
+                    &(verified_sales_koinu as i64),
+                    &(fee_koinu as i64),
+                    &(net_prize_koinu as i64),
+                    &rollover_occurred,
+                ],
+            )
+            .await
+            .map_err(|e| format!("resolve_lotto (update lottery): {e}"))?;
+
+        for winner in &winner_rows {
+            client
+                .execute(
+                    "INSERT INTO lotto_winners (
+                        lotto_id, inscription_id, ticket_id, resolved_height,
+                        rank, score, payout_bps, payout_koinu, seed_numbers, drawn_numbers, bonus_drawn_numbers
+                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                     ON CONFLICT (lotto_id, inscription_id) DO NOTHING",
+                    &[
+                        &winner.lotto_id,
+                        &winner.inscription_id,
+                        &winner.ticket_id,
+                        &(winner.resolved_height as i64),
+                        &(winner.rank as i32),
+                        &(winner.score as i64),
+                        &(winner.payout_bps as i32),
+                        &(winner.payout_koinu as i64),
+                        &seed_numbers_to_i32(&winner.seed_numbers),
+                        &seed_numbers_to_i32(&winner.drawn_numbers),
+                        &seed_numbers_to_i32(&winner.bonus_drawn_numbers),
+                    ],
+                )
+                .await
+                .map_err(|e| format!("resolve_lotto (insert winners): {e}"))?;
+        }
+
+        resolved_winners.extend(winner_rows);
+    }
+
+    Ok(resolved_winners)
+}
+
+pub async fn rollback_lotto_lotteries<T: GenericClient>(
+    deploy_height: u64,
+    client: &T,
+) -> Result<(), String> {
+    client
+        .execute(
+            "DELETE FROM lotto_lotteries WHERE deploy_height = $1",
+            &[&(deploy_height as i64)],
+        )
+        .await
+        .map_err(|e| format!("rollback_lotto_lotteries: {e}"))?;
+    Ok(())
+}
+
+pub async fn rollback_lotto_tickets<T: GenericClient>(
+    minted_height: u64,
+    client: &T,
+) -> Result<(), String> {
+    client
+        .execute(
+            "DELETE FROM lotto_tickets WHERE minted_height = $1",
+            &[&(minted_height as i64)],
+        )
+        .await
+        .map_err(|e| format!("rollback_lotto_tickets: {e}"))?;
+    Ok(())
+}
+
+pub async fn rollback_lotto_resolutions<T: GenericClient>(
+    resolved_height: u64,
+    client: &T,
+) -> Result<(), String> {
+    client
+        .execute(
+            "DELETE FROM lotto_winners WHERE resolved_height = $1",
+            &[&(resolved_height as i64)],
+        )
+        .await
+        .map_err(|e| format!("rollback_lotto_resolutions (delete winners): {e}"))?;
+
+    client
+        .execute(
+            "UPDATE lotto_lotteries
+             SET resolved = FALSE,
+                 resolved_height = NULL,
+                 resolved_timestamp = NULL,
+                 resolved_block_hash = NULL,
+                 drawn_numbers = NULL,
+                 bonus_drawn_numbers = ARRAY[]::INTEGER[],
+                 verified_ticket_count = NULL,
+                 verified_sales_koinu = NULL,
+                 fee_koinu = NULL,
+                 net_prize_koinu = NULL,
+                 rollover_occurred = FALSE
+             WHERE resolved_height = $1",
+            &[&(resolved_height as i64)],
+        )
+        .await
+        .map_err(|e| format!("rollback_lotto_resolutions (reset lotteries): {e}"))?;
+
+    Ok(())
+}
+
+pub struct LottoSummaryRow {
+    pub lotto_id: String,
+    pub inscription_id: String,
+    pub deploy_height: u64,
+    pub deploy_timestamp: u64,
+    pub template: String,
+    pub draw_block: u64,
+    pub ticket_price_koinu: u64,
+    pub prize_pool_address: String,
+    pub fee_percent: u8,
+    pub main_numbers_pick: u16,
+    pub main_numbers_max: u16,
+    pub bonus_numbers_pick: u16,
+    pub bonus_numbers_max: u16,
+    pub resolution_mode: String,
+    pub rollover_enabled: bool,
+    pub guaranteed_min_prize_koinu: Option<u64>,
+    pub resolved: bool,
+    pub resolved_height: Option<u64>,
+    pub drawn_numbers: Option<Vec<u16>>,
+    pub bonus_drawn_numbers: Vec<u16>,
+    pub verified_ticket_count: Option<u64>,
+    pub verified_sales_koinu: Option<u64>,
+    pub net_prize_koinu: Option<u64>,
+    pub rollover_occurred: bool,
+    pub current_ticket_count: u64,
+}
+
+pub struct LottoStatusRow {
+    pub summary: LottoSummaryRow,
+    pub winners: Vec<LottoWinnerRow>,
+}
+
+pub async fn get_lotto_lottery<T: GenericClient>(
+    lotto_id: &str,
+    client: &T,
+) -> Result<Option<LottoStatusRow>, String> {
+    let row = client
+        .query_opt(
+            "SELECT l.lotto_id, l.inscription_id, l.deploy_height, l.deploy_timestamp, l.template, l.draw_block,
+                    l.ticket_price_koinu, l.prize_pool_address, l.fee_percent,
+                    l.main_numbers_pick, l.main_numbers_max, l.bonus_numbers_pick, l.bonus_numbers_max,
+                    l.resolution_mode, l.rollover_enabled, l.guaranteed_min_prize_koinu, l.resolved, l.resolved_height,
+                    l.drawn_numbers, l.bonus_drawn_numbers,
+                    l.verified_ticket_count, l.verified_sales_koinu, l.net_prize_koinu,
+                    l.rollover_occurred,
+                    COALESCE((SELECT COUNT(*) FROM lotto_tickets t WHERE t.lotto_id = l.lotto_id), 0) AS current_ticket_count
+             FROM lotto_lotteries l
+             WHERE l.lotto_id = $1",
+            &[&lotto_id],
+        )
+        .await
+        .map_err(|e| format!("get_lotto_lottery: {e}"))?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let winners = list_lotto_winners(lotto_id, client).await?;
+    Ok(Some(LottoStatusRow {
+        summary: lotto_summary_from_row(&row),
+        winners,
+    }))
+}
+
+pub async fn list_lotto_lotteries<T: GenericClient>(
+    limit: usize,
+    offset: usize,
+    client: &T,
+) -> Result<Vec<LottoSummaryRow>, String> {
+    let rows = client
+        .query(
+            "SELECT l.lotto_id, l.inscription_id, l.deploy_height, l.deploy_timestamp, l.template, l.draw_block,
+                    l.ticket_price_koinu, l.prize_pool_address, l.fee_percent,
+                    l.main_numbers_pick, l.main_numbers_max, l.bonus_numbers_pick, l.bonus_numbers_max,
+                    l.resolution_mode, l.rollover_enabled, l.guaranteed_min_prize_koinu, l.resolved, l.resolved_height,
+                    l.drawn_numbers, l.bonus_drawn_numbers,
+                    l.verified_ticket_count, l.verified_sales_koinu, l.net_prize_koinu,
+                    l.rollover_occurred,
+                    COALESCE((SELECT COUNT(*) FROM lotto_tickets t WHERE t.lotto_id = l.lotto_id), 0) AS current_ticket_count
+             FROM lotto_lotteries l
+             ORDER BY l.deploy_height DESC, l.lotto_id ASC
+             LIMIT $1 OFFSET $2",
+            &[&(limit as i64), &(offset as i64)],
+        )
+        .await
+        .map_err(|e| format!("list_lotto_lotteries: {e}"))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| lotto_summary_from_row(&row))
+        .collect())
+}
+
+pub async fn count_lotto_lotteries<T: GenericClient>(client: &T) -> Result<i64, String> {
+    let row = client
+        .query_one("SELECT COUNT(*) FROM lotto_lotteries", &[])
+        .await
+        .map_err(|e| format!("count_lotto_lotteries: {e}"))?;
+    Ok(row.get(0))
+}
+
+pub async fn list_lotto_winners<T: GenericClient>(
+    lotto_id: &str,
+    client: &T,
+) -> Result<Vec<LottoWinnerRow>, String> {
+    let rows = client
+        .query(
+            "SELECT lotto_id, inscription_id, ticket_id, resolved_height, rank, score,
+                    payout_bps, payout_koinu, seed_numbers, drawn_numbers, bonus_drawn_numbers
+             FROM lotto_winners
+             WHERE lotto_id = $1
+             ORDER BY rank ASC, inscription_id ASC",
+            &[&lotto_id],
+        )
+        .await
+        .map_err(|e| format!("list_lotto_winners: {e}"))?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(LottoWinnerRow {
+                lotto_id: row.get("lotto_id"),
+                inscription_id: row.get("inscription_id"),
+                ticket_id: row.get("ticket_id"),
+                resolved_height: row.get::<_, i64>("resolved_height") as u64,
+                rank: row.get::<_, i32>("rank") as u32,
+                score: row.get::<_, i64>("score") as u64,
+                payout_bps: row.get::<_, i32>("payout_bps") as u32,
+                payout_koinu: row.get::<_, i64>("payout_koinu") as u64,
+                seed_numbers: i32_seed_numbers_to_u16(row.get("seed_numbers"))?,
+                drawn_numbers: i32_seed_numbers_to_u16(row.get("drawn_numbers"))?,
+                bonus_drawn_numbers: i32_seed_numbers_to_u16(row.get("bonus_drawn_numbers"))?,
+            })
+        })
+        .collect()
+}
+
+async fn get_stored_lotto<T: GenericClient>(
+    lotto_id: &str,
+    client: &T,
+) -> Result<Option<StoredLottoRow>, String> {
+    let row = client
+        .query_opt(
+            "SELECT lotto_id, template, draw_block, ticket_price_koinu, prize_pool_address, fee_percent,
+                    main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
+                    resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
+             FROM lotto_lotteries
+             WHERE lotto_id = $1",
+            &[&lotto_id],
+        )
+        .await
+        .map_err(|e| format!("get_stored_lotto: {e}"))?;
+
+    row.map(|row| stored_lotto_from_row(&row)).transpose()
+}
+
+async fn get_lotto_tickets_for_resolution<T: GenericClient>(
+    lotto_id: &str,
+    draw_block: u64,
+    client: &T,
+) -> Result<Vec<StoredTicketRow>, String> {
+    let rows = client
+        .query(
+            "SELECT inscription_id, ticket_id, seed_numbers, minted_height
+             FROM lotto_tickets
+             WHERE lotto_id = $1 AND minted_height <= $2
+             ORDER BY minted_height ASC, inscription_id ASC",
+            &[&lotto_id, &(draw_block as i64)],
+        )
+        .await
+        .map_err(|e| format!("get_lotto_tickets_for_resolution: {e}"))?;
+
+    rows.into_iter()
+        .map(|row| {
+            let seed_numbers: Vec<i32> = row.get("seed_numbers");
+            Ok(StoredTicketRow {
+                inscription_id: row.get("inscription_id"),
+                ticket_id: row.get("ticket_id"),
+                seed_numbers: i32_seed_numbers_to_u16(seed_numbers)?,
+                minted_height: row.get::<_, i64>("minted_height") as u64,
+            })
+        })
+        .collect()
+}
+
+fn stored_lotto_from_row(row: &tokio_postgres::Row) -> Result<StoredLottoRow, String> {
+    Ok(StoredLottoRow {
+        lotto_id: row.get("lotto_id"),
+        template: lotto_template_from_str(row.get::<_, String>("template").as_str())?,
+        draw_block: row.get::<_, i64>("draw_block") as u64,
+        ticket_price_koinu: row.get::<_, i64>("ticket_price_koinu") as u64,
+        prize_pool_address: row.get("prize_pool_address"),
+        fee_percent: row.get::<_, i32>("fee_percent") as u8,
+        main_numbers: NumberConfig {
+            pick: row.get::<_, i32>("main_numbers_pick") as u16,
+            max: row.get::<_, i32>("main_numbers_max") as u16,
+        },
+        bonus_numbers: NumberConfig {
+            pick: row.get::<_, i32>("bonus_numbers_pick") as u16,
+            max: row.get::<_, i32>("bonus_numbers_max") as u16,
+        },
+        resolution_mode: resolution_mode_from_str(row.get::<_, String>("resolution_mode").as_str())?,
+        rollover_enabled: row.get("rollover_enabled"),
+        guaranteed_min_prize_koinu: row
+            .get::<_, Option<i64>>("guaranteed_min_prize_koinu")
+            .map(|value| value as u64),
+    })
+}
+
+fn lotto_summary_from_row(row: &tokio_postgres::Row) -> LottoSummaryRow {
+    LottoSummaryRow {
+        lotto_id: row.get("lotto_id"),
+        inscription_id: row.get("inscription_id"),
+        deploy_height: row.get::<_, i64>("deploy_height") as u64,
+        deploy_timestamp: row.get::<_, i64>("deploy_timestamp") as u64,
+        template: row.get("template"),
+        draw_block: row.get::<_, i64>("draw_block") as u64,
+        ticket_price_koinu: row.get::<_, i64>("ticket_price_koinu") as u64,
+        prize_pool_address: row.get("prize_pool_address"),
+        fee_percent: row.get::<_, i32>("fee_percent") as u8,
+        main_numbers_pick: row.get::<_, i32>("main_numbers_pick") as u16,
+        main_numbers_max: row.get::<_, i32>("main_numbers_max") as u16,
+        bonus_numbers_pick: row.get::<_, i32>("bonus_numbers_pick") as u16,
+        bonus_numbers_max: row.get::<_, i32>("bonus_numbers_max") as u16,
+        resolution_mode: row.get("resolution_mode"),
+        rollover_enabled: row.get("rollover_enabled"),
+        guaranteed_min_prize_koinu: row
+            .get::<_, Option<i64>>("guaranteed_min_prize_koinu")
+            .map(|value| value as u64),
+        resolved: row.get("resolved"),
+        resolved_height: row.get::<_, Option<i64>>("resolved_height").map(|value| value as u64),
+        drawn_numbers: row
+            .get::<_, Option<Vec<i32>>>("drawn_numbers")
+            .map(|numbers| i32_seed_numbers_to_u16(numbers).unwrap_or_default()),
+        bonus_drawn_numbers: i32_seed_numbers_to_u16(row.get("bonus_drawn_numbers"))
+            .unwrap_or_default(),
+        verified_ticket_count: row
+            .get::<_, Option<i64>>("verified_ticket_count")
+            .map(|value| value as u64),
+        verified_sales_koinu: row
+            .get::<_, Option<i64>>("verified_sales_koinu")
+            .map(|value| value as u64),
+        net_prize_koinu: row
+            .get::<_, Option<i64>>("net_prize_koinu")
+            .map(|value| value as u64),
+        rollover_occurred: row.get("rollover_occurred"),
+        current_ticket_count: row.get::<_, i64>("current_ticket_count") as u64,
+    }
+}
+
+fn resolve_lottery_winners(
+    lottery: &StoredLottoRow,
+    tickets: &[StoredTicketRow],
+    draw: &LottoDraw,
+    resolved_height: u64,
+    net_prize_koinu: u64,
+) -> (Vec<LottoWinnerRow>, bool) {
+    match lottery.resolution_mode {
+        ResolutionMode::AlwaysWinner => {
+            if tickets.is_empty() {
+                return (Vec::new(), false);
+            }
+            let scored = score_tickets(tickets, draw, &lottery.template);
+            let Some(best_score) = scored.first().map(|ticket| ticket.score) else {
+                return (Vec::new(), false);
+            };
+            let best_bonus_score = scored
+                .iter()
+                .filter(|ticket| ticket.score == best_score)
+                .map(|ticket| ticket.bonus_score)
+                .min()
+                .unwrap_or(0);
+            let winners: Vec<_> = scored
+                .into_iter()
+                .filter(|ticket| ticket.score == best_score && ticket.bonus_score == best_bonus_score)
+                .collect();
+            let payouts = split_amount(net_prize_koinu, winners.len());
+            (
+                winners
+                    .into_iter()
+                    .zip(payouts)
+                    .map(|(ticket, payout_koinu)| winner_from_scored_ticket(
+                        &lottery.lotto_id,
+                        resolved_height,
+                        1,
+                        10_000,
+                        payout_koinu,
+                        ticket,
+                        draw,
+                    ))
+                    .collect(),
+                false,
+            )
+        }
+        ResolutionMode::ClosestWins => {
+            if tickets.is_empty() {
+                return (Vec::new(), false);
+            }
+            let mut scored = score_tickets(tickets, draw, &lottery.template);
+            let mut payout_bps = payout_bps_for_template(&lottery.template);
+            let winner_cap = payout_bps.len().max(1);
+            scored.truncate(winner_cap);
+            payout_bps.truncate(scored.len());
+            let allocated: u32 = payout_bps.iter().copied().sum();
+            if let Some(first_share) = payout_bps.first_mut() {
+                *first_share += 10_000_u32.saturating_sub(allocated);
+            }
+            let payouts = split_by_bps(net_prize_koinu, &payout_bps);
+            (
+                scored
+                    .into_iter()
+                    .zip(payout_bps)
+                    .zip(payouts)
+                    .enumerate()
+                    .map(|(index, ((ticket, bps), payout_koinu))| {
+                        winner_from_scored_ticket(
+                            &lottery.lotto_id,
+                            resolved_height,
+                            (index + 1) as u32,
+                            bps,
+                            payout_koinu,
+                            ticket,
+                            draw,
+                        )
+                    })
+                    .collect(),
+                false,
+            )
+        }
+        ResolutionMode::ExactOnlyWithRollover => {
+            let exact_matches: Vec<_> = score_tickets(tickets, draw, &lottery.template)
+                .into_iter()
+                .filter(|ticket| ticket.seed_numbers == draw.main_numbers)
+                .collect();
+            if exact_matches.is_empty() {
+                return (Vec::new(), lottery.rollover_enabled);
+            }
+            let payouts = split_amount(net_prize_koinu, exact_matches.len());
+            (
+                exact_matches
+                    .into_iter()
+                    .zip(payouts)
+                    .map(|(ticket, payout_koinu)| winner_from_scored_ticket(
+                        &lottery.lotto_id,
+                        resolved_height,
+                        1,
+                        10_000,
+                        payout_koinu,
+                        ticket,
+                        draw,
+                    ))
+                    .collect(),
+                false,
+            )
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ScoredTicketRow {
+    inscription_id: String,
+    ticket_id: String,
+    seed_numbers: Vec<u16>,
+    score: u64,
+    bonus_score: u64,
+    minted_height: u64,
+}
+
+fn score_tickets(
+    tickets: &[StoredTicketRow],
+    draw: &LottoDraw,
+    template: &LottoTemplate,
+) -> Vec<ScoredTicketRow> {
+    let mut scored: Vec<_> = tickets
+        .iter()
+        .map(|ticket| ScoredTicketRow {
+            inscription_id: ticket.inscription_id.clone(),
+            ticket_id: ticket.ticket_id.clone(),
+            seed_numbers: ticket.seed_numbers.clone(),
+            score: score_ticket(&ticket.seed_numbers, &draw.main_numbers),
+            bonus_score: bonus_score_for_ticket(ticket, draw, template),
+            minted_height: ticket.minted_height,
+        })
+        .collect();
+    scored.sort_by(|left, right| {
+        left.score
+            .cmp(&right.score)
+            .then_with(|| left.bonus_score.cmp(&right.bonus_score))
+            .then_with(|| left.minted_height.cmp(&right.minted_height))
+            .then_with(|| left.inscription_id.cmp(&right.inscription_id))
+    });
+    scored
+}
+
+fn winner_from_scored_ticket(
+    lotto_id: &str,
+    resolved_height: u64,
+    rank: u32,
+    payout_bps: u32,
+    payout_koinu: u64,
+    ticket: ScoredTicketRow,
+    draw: &LottoDraw,
+) -> LottoWinnerRow {
+    LottoWinnerRow {
+        lotto_id: lotto_id.to_string(),
+        inscription_id: ticket.inscription_id,
+        ticket_id: ticket.ticket_id,
+        resolved_height,
+        rank,
+        score: ticket.score,
+        payout_bps,
+        payout_koinu,
+        seed_numbers: ticket.seed_numbers,
+        drawn_numbers: draw.main_numbers.clone(),
+        bonus_drawn_numbers: draw.bonus_numbers.clone(),
+    }
+}
+
+fn split_amount(amount: u64, recipients: usize) -> Vec<u64> {
+    if recipients == 0 {
+        return Vec::new();
+    }
+    let base = amount / recipients as u64;
+    let remainder = amount % recipients as u64;
+    (0..recipients)
+        .map(|index| base + if (index as u64) < remainder { 1 } else { 0 })
+        .collect()
+}
+
+fn split_by_bps(amount: u64, payout_bps: &[u32]) -> Vec<u64> {
+    if payout_bps.is_empty() {
+        return Vec::new();
+    }
+    let mut payouts = Vec::with_capacity(payout_bps.len());
+    let mut allocated = 0_u64;
+    for (index, bps) in payout_bps.iter().enumerate() {
+        if index + 1 == payout_bps.len() {
+            payouts.push(amount.saturating_sub(allocated));
+        } else {
+            let payout = amount.saturating_mul(*bps as u64) / 10_000;
+            payouts.push(payout);
+            allocated = allocated.saturating_add(payout);
+        }
+    }
+    payouts
+}
+
+fn payout_bps_for_template(template: &LottoTemplate) -> Vec<u32> {
+    match template {
+        LottoTemplate::ClosestWins => vec![6_000, 2_500, 1_500],
+        LottoTemplate::Six49Classic => vec![7_000, 2_000, 1_000],
+        LottoTemplate::LifeAnnuity => vec![10_000],
+        LottoTemplate::PowerballDualDrum => vec![8_500, 1_000, 500],
+        LottoTemplate::RolloverJackpot | LottoTemplate::AlwaysWinner | LottoTemplate::Custom => {
+            vec![6_000, 2_500, 1_500]
+        }
+    }
+}
+
+fn bonus_score_for_ticket(
+    ticket: &StoredTicketRow,
+    draw: &LottoDraw,
+    template: &LottoTemplate,
+) -> u64 {
+    if draw.bonus_numbers.is_empty() {
+        return 0;
+    }
+
+    match template {
+        LottoTemplate::PowerballDualDrum | LottoTemplate::Custom => {
+            score_ticket(&ticket.seed_numbers, &draw.bonus_numbers)
+        }
+        _ => 0,
+    }
+}
+
+fn tx_outputs_match_prize_payment(
+    outputs: &[crate::core::protocol::inscription_parsing::ParsedLottoOutput],
+    prize_pool_address: &str,
+    ticket_price_koinu: u64,
+) -> bool {
+    let paid_total = outputs
+        .iter()
+        .filter_map(|output| {
+            let script = script_buf_from_hex(&output.script_pubkey)?;
+            let address = dogecoin_address_from_script(&script)?;
+            if address == prize_pool_address {
+                Some(output.value)
+            } else {
+                None
+            }
+        })
+        .sum::<u64>();
+
+    paid_total == ticket_price_koinu
+}
+
+fn script_buf_from_hex(script_pubkey: &str) -> Option<ScriptBuf> {
+    let hex = script_pubkey.trim_start_matches("0x");
+    let bytes = hex::decode(hex).ok()?;
+    Some(ScriptBuf::from_bytes(bytes))
+}
+
+fn dogecoin_base58check(version: u8, payload: &[u8]) -> String {
+    let mut data = Vec::with_capacity(1 + payload.len());
+    data.push(version);
+    data.extend_from_slice(payload);
+    bitcoin::base58::encode_check(&data)
+}
+
+fn dogecoin_address_from_script(script: &ScriptBuf) -> Option<String> {
+    let bytes = script.as_bytes();
+    if script.is_p2pkh() && bytes.len() == 25 {
+        Some(dogecoin_base58check(0x1e, &bytes[3..23]))
+    } else if script.is_p2sh() && bytes.len() == 23 {
+        Some(dogecoin_base58check(0x16, &bytes[2..22]))
+    } else {
+        None
+    }
+}
+
+fn special_lotto_requires_zero_fee(lotto_id: &str) -> bool {
+    matches!(lotto_id, "doge-69-420" | "doge-max")
+}
+
+fn lotto_template_as_str(template: &LottoTemplate) -> &'static str {
+    match template {
+        LottoTemplate::ClosestWins => "closest_wins",
+        LottoTemplate::PowerballDualDrum => "powerball_dual_drum",
+        LottoTemplate::Six49Classic => "6_49_classic",
+        LottoTemplate::RolloverJackpot => "rollover_jackpot",
+        LottoTemplate::AlwaysWinner => "always_winner",
+        LottoTemplate::LifeAnnuity => "life_annuity",
+        LottoTemplate::Custom => "custom",
+    }
+}
+
+fn lotto_template_from_str(template: &str) -> Result<LottoTemplate, String> {
+    match template {
+        "closest_wins" => Ok(LottoTemplate::ClosestWins),
+        "powerball_dual_drum" => Ok(LottoTemplate::PowerballDualDrum),
+        "6_49_classic" => Ok(LottoTemplate::Six49Classic),
+        "rollover_jackpot" => Ok(LottoTemplate::RolloverJackpot),
+        "always_winner" => Ok(LottoTemplate::AlwaysWinner),
+        "life_annuity" => Ok(LottoTemplate::LifeAnnuity),
+        "custom" => Ok(LottoTemplate::Custom),
+        other => Err(format!("unknown lotto template: {other}")),
+    }
+}
+
+fn resolution_mode_as_str(mode: &ResolutionMode) -> &'static str {
+    match mode {
+        ResolutionMode::AlwaysWinner => "always_winner",
+        ResolutionMode::ClosestWins => "closest_wins",
+        ResolutionMode::ExactOnlyWithRollover => "exact_only_with_rollover",
+    }
+}
+
+fn resolution_mode_from_str(mode: &str) -> Result<ResolutionMode, String> {
+    match mode {
+        "always_winner" => Ok(ResolutionMode::AlwaysWinner),
+        "closest_wins" => Ok(ResolutionMode::ClosestWins),
+        "exact_only_with_rollover" => Ok(ResolutionMode::ExactOnlyWithRollover),
+        other => Err(format!("unknown lotto resolution mode: {other}")),
+    }
+}
+
+fn seed_numbers_to_i32(seed_numbers: &[u16]) -> Vec<i32> {
+    seed_numbers.iter().map(|number| *number as i32).collect()
+}
+
+fn i32_seed_numbers_to_u16(seed_numbers: Vec<i32>) -> Result<Vec<u16>, String> {
+    seed_numbers
+        .into_iter()
+        .map(|number| {
+            u16::try_from(number).map_err(|_| format!("invalid lotto seed number stored in db: {number}"))
+        })
+        .collect()
 }
 
 #[cfg(test)]

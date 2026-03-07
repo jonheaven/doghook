@@ -64,6 +64,12 @@ enabled = true
 [protocols.dogemap]
 enabled = true
 
+# doge-lotto meta-protocol. Inscriptions with "p":"doge-lotto" are indexed.
+# Set enabled = false to skip all lotto events.
+[protocols.lotto]
+enabled = true
+content_prefixes = ['{"p":"doge-lotto"']
+
 # Webhook delivery configuration.
 # When enabled = true, doghook POSTs a JSON event to every URL in the list
 # whenever a new DNS registration or Dogemap claim is indexed.

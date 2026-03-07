@@ -23,7 +23,9 @@ use crate::{
             drc20_pg, cache::Brc20MemoryCache, index::index_block_and_insert_drc20_operations,
         },
         protocol::{
-            inscription_parsing::parse_inscriptions_in_standardized_block,
+            inscription_parsing::{
+                parse_inscriptions_in_standardized_block, ParsedLottoDeploy, ParsedLottoMint,
+            },
             inscription_sequencing::{
                 get_dogecoin_network, get_jubilee_block_height,
                 parallelize_inscription_data_computations,
@@ -127,10 +129,21 @@ pub async fn index_block(
         let mut dns_map: HashMap<String, String> = HashMap::new();
         // Dogemap block_number → inscription_id (first wins within block)
         let mut dogemap_map: HashMap<u32, String> = HashMap::new();
+        let mut lotto_deploy_map: HashMap<String, ParsedLottoDeploy> = HashMap::new();
+        let mut lotto_mints: Vec<ParsedLottoMint> = Vec::new();
 
         // Measure inscription parsing time
         let parsing_start = std::time::Instant::now();
-        parse_inscriptions_in_standardized_block(block, &mut drc20_operation_map, &mut dns_map, &mut dogemap_map, config, ctx);
+        parse_inscriptions_in_standardized_block(
+            block,
+            &mut drc20_operation_map,
+            &mut dns_map,
+            &mut dogemap_map,
+            &mut lotto_deploy_map,
+            &mut lotto_mints,
+            config,
+            ctx,
+        );
         prometheus
             .metrics_record_inscription_parsing_time(parsing_start.elapsed().as_millis() as f64);
 
@@ -218,6 +231,85 @@ pub async fn index_block(
             }
         }
 
+        if !lotto_deploy_map.is_empty() {
+            if let Err(e) = doginals_pg::insert_lotto_lotteries(
+                &lotto_deploy_map,
+                block_height,
+                block.timestamp,
+                &ord_tx,
+            )
+            .await
+            {
+                return Err(format!("Failed to insert doge-lotto deploys: {}", e));
+            }
+        }
+
+        let inserted_lotto_tickets = if !lotto_mints.is_empty() {
+            match doginals_pg::insert_lotto_tickets(
+                &lotto_mints,
+                block_height,
+                block.timestamp,
+                &ord_tx,
+            )
+            .await
+            {
+                Ok(rows) => rows,
+                Err(e) => return Err(format!("Failed to insert doge-lotto tickets: {}", e)),
+            }
+        } else {
+            Vec::new()
+        };
+
+        let resolved_lotto_winners = doginals_pg::resolve_lotto(
+            block_height,
+            &block.block_identifier.hash,
+            block.timestamp,
+            &ord_tx,
+        )
+        .await
+        .map_err(|e| format!("Failed to resolve doge-lotto draws: {}", e))?;
+
+        let webhook_urls = config.webhook_urls().to_vec();
+        if !webhook_urls.is_empty() {
+            for ticket in &inserted_lotto_tickets {
+                let payload = webhooks::lotto_ticket_event(
+                    &ticket.lotto_id,
+                    &ticket.ticket_id,
+                    &ticket.inscription_id,
+                    &ticket.tx_id,
+                    ticket.minted_height,
+                    ticket.minted_timestamp,
+                    &ticket.seed_numbers,
+                );
+                webhooks::fire_webhooks(&webhook_urls, payload, ctx).await;
+            }
+            for winner in &resolved_lotto_winners {
+                let payload = webhooks::lotto_winner_event(
+                    &winner.lotto_id,
+                    &winner.ticket_id,
+                    &winner.inscription_id,
+                    winner.resolved_height,
+                    winner.rank,
+                    winner.score,
+                    winner.payout_bps,
+                    winner.payout_koinu,
+                    &winner.seed_numbers,
+                    &winner.drawn_numbers,
+                );
+                webhooks::fire_webhooks(&webhook_urls, payload, ctx).await;
+            }
+        }
+
+        if !lotto_deploy_map.is_empty() || !inserted_lotto_tickets.is_empty() || !resolved_lotto_winners.is_empty() {
+            try_info!(
+                ctx,
+                "doge-lotto at block #{block_height}: {} deploy(s), {} ticket mint(s), {} winner record(s)",
+                lotto_deploy_map.len(),
+                inserted_lotto_tickets.len(),
+                resolved_lotto_winners.len(),
+            );
+        }
+
         prometheus.metrics_record_inscription_db_write_time(
             inscription_db_write_start.elapsed().as_millis() as f64,
         );
@@ -297,6 +389,9 @@ pub async fn rollback_block(
         doginals_pg::rollback_block(block_height, &ord_tx).await?;
         doginals_pg::rollback_dns_names(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogemap_claims(block_height, &ord_tx).await?;
+        doginals_pg::rollback_lotto_resolutions(block_height, &ord_tx).await?;
+        doginals_pg::rollback_lotto_tickets(block_height, &ord_tx).await?;
+        doginals_pg::rollback_lotto_lotteries(block_height, &ord_tx).await?;
 
         // BRC-20
         if let Some(drc20_pool) = &pg_pools.drc20 {

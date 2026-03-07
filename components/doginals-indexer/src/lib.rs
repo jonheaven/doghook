@@ -203,7 +203,9 @@ async fn new_ordinals_indexer_runloop(
 }
 
 // Re-export row types so callers (CLI) don't need to reach into db internals.
-pub use db::doginals_pg::{DnsNameRow, DogemapClaimRow};
+pub use db::doginals_pg::{
+    DnsNameRow, DogemapClaimRow, LottoStatusRow, LottoSummaryRow, LottoWinnerRow,
+};
 
 /// Look up a single DNS name registration.
 pub async fn dns_resolve(name: &str, config: &Config) -> Result<Option<DnsNameRow>, String> {
@@ -246,6 +248,29 @@ pub async fn dogemap_list(
     let client = pg_pool_client(&pool).await?;
     let rows = db::doginals_pg::list_dogemap_claims(limit, offset, &client).await?;
     let total = db::doginals_pg::count_dogemap_claims(&client).await?;
+    Ok((rows, total))
+}
+
+/// Look up a single doge-lotto deployment and any resolved winners.
+pub async fn lotto_status(
+    lotto_id: &str,
+    config: &Config,
+) -> Result<Option<LottoStatusRow>, String> {
+    let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
+    let client = pg_pool_client(&pool).await?;
+    db::doginals_pg::get_lotto_lottery(lotto_id, &client).await
+}
+
+/// List doge-lotto deployments.
+pub async fn lotto_list(
+    limit: usize,
+    offset: usize,
+    config: &Config,
+) -> Result<(Vec<LottoSummaryRow>, i64), String> {
+    let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
+    let client = pg_pool_client(&pool).await?;
+    let rows = db::doginals_pg::list_lotto_lotteries(limit, offset, &client).await?;
+    let total = db::doginals_pg::count_lotto_lotteries(&client).await?;
     Ok((rows, total))
 }
 

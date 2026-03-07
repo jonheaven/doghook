@@ -43,11 +43,12 @@ pub struct DoginalConfig {
 }
 
 /// Per-protocol enable/disable switches.
-/// Absent from toml = both enabled by default (backward compatible).
+/// Absent from toml = all enabled by default (backward compatible).
 #[derive(Clone, Debug)]
 pub struct ProtocolsConfig {
     pub dns: DnsProtocolConfig,
     pub dogemap: DogemapProtocolConfig,
+    pub lotto: LottoProtocolConfig,
 }
 
 impl Default for ProtocolsConfig {
@@ -55,8 +56,18 @@ impl Default for ProtocolsConfig {
         Self {
             dns: DnsProtocolConfig { enabled: true },
             dogemap: DogemapProtocolConfig { enabled: true },
+            lotto: LottoProtocolConfig {
+                enabled: true,
+                content_prefixes: vec![r#"{"p":"doge-lotto""#.to_string()],
+            },
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct LottoProtocolConfig {
+    pub enabled: bool,
+    pub content_prefixes: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -233,6 +244,10 @@ impl Config {
         config.resources.dogecoin_rpc_threads = 1;
         config.resources.cpu_core_available = 1;
         config
+    }
+
+    pub fn lotto_enabled(&self) -> bool {
+        self.protocols.lotto.enabled
     }
 
     pub fn webhook_urls(&self) -> &[String] {

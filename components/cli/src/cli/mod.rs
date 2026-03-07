@@ -12,8 +12,8 @@ use std::{
 use dogecoin::{try_error, try_info, types::BlockIdentifier, utils::Context};
 use clap::Parser;
 use commands::{
-    Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand, IndexCommand, Protocol,
-    ServiceCommand,
+    Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand, IndexCommand,
+    LottoCommand, Protocol, ServiceCommand,
 };
 use config::{generator::generate_toml_config, Config};
 use hiro_system_kit;
@@ -292,6 +292,230 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                 }
             }
         },
+        Protocol::Lotto(subcmd) => match subcmd {
+            LottoCommand::Deploy(cmd) => {
+                let resolution_mode = normalize_resolution_mode(&cmd.resolution_mode)?;
+                if !(0..=10).contains(&cmd.fee_percent) {
+                    return Err("fee_percent must be between 0 and 10".into());
+                }
+                if matches!(cmd.lotto_id.as_str(), "doge-69-420" | "doge-max") && cmd.fee_percent != 0 {
+                    return Err(format!("{} must be deployed with fee_percent = 0", cmd.lotto_id));
+                }
+                let payload = serde_json::json!({
+                    "p": "doge-lotto",
+                    "op": "deploy",
+                    "lotto_id": cmd.lotto_id,
+                    "draw_block": cmd.draw_block,
+                    "ticket_price_koinu": cmd.ticket_price_koinu,
+                    "prize_pool_address": cmd.prize_pool_address,
+                    "fee_percent": cmd.fee_percent,
+                    "resolution_mode": resolution_mode,
+                    "rollover_enabled": cmd.rollover_enabled,
+                    "guaranteed_min_prize_koinu": cmd.guaranteed_min_prize_koinu,
+                });
+                let payload = compact_json_without_nulls(payload)?;
+                if cmd.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "content_type": "text/plain",
+                            "payload": payload,
+                        })
+                    );
+                } else {
+                    println!("{}", payload);
+                }
+            }
+            LottoCommand::Mint(cmd) => {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                config.assert_doginals_config()?;
+                let Some(status) = doginals_indexer::lotto_status(&cmd.lotto_id, &config).await? else {
+                    return Err(format!("Lotto not found: {}", cmd.lotto_id));
+                };
+
+                let seed_numbers = if let Some(seed_numbers) = &cmd.seed_numbers {
+                    parse_seed_numbers(seed_numbers)?
+                } else {
+                    doginals_indexer::core::meta_protocols::lotto::quickpick()
+                };
+                let ticket_id = cmd
+                    .ticket_id
+                    .clone()
+                    .unwrap_or_else(generate_ticket_id);
+
+                let payload = serde_json::json!({
+                    "p": "doge-lotto",
+                    "op": "mint",
+                    "lotto_id": cmd.lotto_id,
+                    "ticket_id": ticket_id,
+                    "seed_numbers": seed_numbers,
+                });
+                let payload = compact_json_without_nulls(payload)?;
+
+                if cmd.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "content_type": "text/plain",
+                            "payload": payload,
+                            "payment": {
+                                "address": status.summary.prize_pool_address,
+                                "amount_koinu": status.summary.ticket_price_koinu,
+                            }
+                        })
+                    );
+                } else {
+                    println!("{}", payload);
+                    eprintln!(
+                        "pay exact {} koinu to {} in the same transaction",
+                        status.summary.ticket_price_koinu,
+                        status.summary.prize_pool_address,
+                    );
+                }
+            }
+            LottoCommand::Status(cmd) => {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                config.assert_doginals_config()?;
+                match doginals_indexer::lotto_status(&cmd.lotto_id, &config).await? {
+                    Some(row) => {
+                        if cmd.json {
+                            let winners: Vec<_> = row
+                                .winners
+                                .iter()
+                                .map(|winner| {
+                                    serde_json::json!({
+                                        "lotto_id": winner.lotto_id,
+                                        "inscription_id": winner.inscription_id,
+                                        "ticket_id": winner.ticket_id,
+                                        "resolved_height": winner.resolved_height,
+                                        "rank": winner.rank,
+                                        "score": winner.score,
+                                        "payout_bps": winner.payout_bps,
+                                        "payout_koinu": winner.payout_koinu,
+                                        "seed_numbers": winner.seed_numbers,
+                                        "drawn_numbers": winner.drawn_numbers,
+                                    })
+                                })
+                                .collect();
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "lotto_id": row.summary.lotto_id,
+                                    "inscription_id": row.summary.inscription_id,
+                                    "deploy_height": row.summary.deploy_height,
+                                    "deploy_timestamp": row.summary.deploy_timestamp,
+                                    "draw_block": row.summary.draw_block,
+                                    "ticket_price_koinu": row.summary.ticket_price_koinu,
+                                    "prize_pool_address": row.summary.prize_pool_address,
+                                    "fee_percent": row.summary.fee_percent,
+                                    "resolution_mode": row.summary.resolution_mode,
+                                    "rollover_enabled": row.summary.rollover_enabled,
+                                    "guaranteed_min_prize_koinu": row.summary.guaranteed_min_prize_koinu,
+                                    "resolved": row.summary.resolved,
+                                    "resolved_height": row.summary.resolved_height,
+                                    "verified_ticket_count": row.summary.verified_ticket_count,
+                                    "verified_sales_koinu": row.summary.verified_sales_koinu,
+                                    "net_prize_koinu": row.summary.net_prize_koinu,
+                                    "rollover_occurred": row.summary.rollover_occurred,
+                                    "current_ticket_count": row.summary.current_ticket_count,
+                                    "winners": winners,
+                                })
+                            );
+                        } else {
+                            println!("Lotto ID:               {}", row.summary.lotto_id);
+                            println!("Inscription ID:         {}", row.summary.inscription_id);
+                            println!("Deploy Height:          {}", row.summary.deploy_height);
+                            println!("Draw Block:             {}", row.summary.draw_block);
+                            println!("Ticket Price (koinu):   {}", row.summary.ticket_price_koinu);
+                            println!("Prize Pool Address:     {}", row.summary.prize_pool_address);
+                            println!("Fee Percent:            {}", row.summary.fee_percent);
+                            println!("Resolution Mode:        {}", row.summary.resolution_mode);
+                            println!("Rollover Enabled:       {}", row.summary.rollover_enabled);
+                            println!("Guaranteed Min Prize:   {}", row.summary.guaranteed_min_prize_koinu.map(|v| v.to_string()).unwrap_or_else(|| "-".into()));
+                            println!("Current Ticket Count:   {}", row.summary.current_ticket_count);
+                            println!("Resolved:               {}", row.summary.resolved);
+                            println!("Resolved Height:        {}", row.summary.resolved_height.map(|v| v.to_string()).unwrap_or_else(|| "-".into()));
+                            println!("Verified Ticket Count:  {}", row.summary.verified_ticket_count.map(|v| v.to_string()).unwrap_or_else(|| "-".into()));
+                            println!("Verified Sales (koinu): {}", row.summary.verified_sales_koinu.map(|v| v.to_string()).unwrap_or_else(|| "-".into()));
+                            println!("Net Prize (koinu):      {}", row.summary.net_prize_koinu.map(|v| v.to_string()).unwrap_or_else(|| "-".into()));
+                            println!("Rollover Occurred:      {}", row.summary.rollover_occurred);
+                            if row.winners.is_empty() {
+                                println!("Winners:                none");
+                            } else {
+                                println!("Winners:");
+                                for winner in &row.winners {
+                                    println!(
+                                        "  rank {} ticket {} payout {} koinu score {} inscription {}",
+                                        winner.rank,
+                                        winner.ticket_id,
+                                        winner.payout_koinu,
+                                        winner.score,
+                                        winner.inscription_id
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        if cmd.json {
+                            println!("null");
+                        } else {
+                            println!("Lotto not found: {}", cmd.lotto_id);
+                        }
+                        process::exit(1);
+                    }
+                }
+            }
+            LottoCommand::List(cmd) => {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                config.assert_doginals_config()?;
+                let (rows, total) = doginals_indexer::lotto_list(cmd.limit, 0, &config).await?;
+                if cmd.json {
+                    let json_rows: Vec<_> = rows
+                        .iter()
+                        .map(|row| {
+                            serde_json::json!({
+                                "lotto_id": row.lotto_id,
+                                "inscription_id": row.inscription_id,
+                                "deploy_height": row.deploy_height,
+                                "draw_block": row.draw_block,
+                                "ticket_price_koinu": row.ticket_price_koinu,
+                                "prize_pool_address": row.prize_pool_address,
+                                "fee_percent": row.fee_percent,
+                                "resolution_mode": row.resolution_mode,
+                                "resolved": row.resolved,
+                                "resolved_height": row.resolved_height,
+                                "current_ticket_count": row.current_ticket_count,
+                                "verified_ticket_count": row.verified_ticket_count,
+                                "net_prize_koinu": row.net_prize_koinu,
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::json!({ "total": total, "lottos": json_rows })
+                    );
+                } else {
+                    println!("doge-lotto Deployments (Total: {total})");
+                    println!(
+                        "{:<24} {:<12} {:<10} {:<8} {:<8} {}",
+                        "Lotto ID", "Draw Block", "Tickets", "Fee %", "Resolved", "Mode"
+                    );
+                    println!("{}", "-".repeat(78));
+                    for row in &rows {
+                        println!(
+                            "{:<24} {:<12} {:<10} {:<8} {:<8} {}",
+                            row.lotto_id,
+                            row.draw_block,
+                            row.current_ticket_count,
+                            row.fee_percent,
+                            row.resolved,
+                            row.resolution_mode,
+                        );
+                    }
+                }
+            }
+        },
         Protocol::Config(subcmd) => match subcmd {
             ConfigCommand::New(cmd) => {
                 use std::{fs::File, io::Write};
@@ -313,4 +537,70 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
         },
     }
     Ok(())
+}
+
+fn normalize_resolution_mode(value: &str) -> Result<&'static str, String> {
+    match value {
+        "always_winner" => Ok("always_winner"),
+        "closest_wins" => Ok("closest_wins"),
+        "exact_only_with_rollover" => Ok("exact_only_with_rollover"),
+        _ => Err(format!(
+            "invalid resolution mode: {} (expected always_winner, closest_wins, or exact_only_with_rollover)",
+            value
+        )),
+    }
+}
+
+fn compact_json_without_nulls(mut value: serde_json::Value) -> Result<String, String> {
+    prune_nulls(&mut value);
+    serde_json::to_string(&value).map_err(|e| format!("unable to serialize lotto payload: {e}"))
+}
+
+fn prune_nulls(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.retain(|_, inner| {
+                prune_nulls(inner);
+                !inner.is_null()
+            });
+        }
+        serde_json::Value::Array(values) => {
+            for inner in values {
+                prune_nulls(inner);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_seed_numbers(value: &str) -> Result<Vec<u16>, String> {
+    let parsed: Vec<u16> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<u16>()
+                .map_err(|e| format!("invalid seed number '{}': {}", part, e))
+        })
+        .collect::<Result<_, _>>()?;
+
+    let payload = serde_json::json!({
+        "p": "doge-lotto",
+        "op": "mint",
+        "lotto_id": "validation-only",
+        "ticket_id": "validation-only",
+        "seed_numbers": parsed,
+    });
+    doginals_indexer::core::meta_protocols::lotto::try_parse_lotto_mint(
+        compact_json_without_nulls(payload)?.as_bytes(),
+    )
+    .map(|mint| mint.seed_numbers)
+    .ok_or("seed_numbers must contain exactly 69 unique values in [1, 420]".into())
+}
+
+fn generate_ticket_id() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("ticket-{}-{}", now.as_secs(), now.subsec_nanos())
 }

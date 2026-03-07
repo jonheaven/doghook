@@ -8,7 +8,7 @@ use bitcoin::Network;
 use crate::{
     DogecoinConfig, Config, DoginalsPredicatesConfig, MetricsConfig, DoginalDrc20Config, DoginalConfig,
     DoginalMetaProtocolsConfig, PgDatabaseConfig, ResourcesConfig, DunesConfig, StorageConfig,
-    ProtocolsConfig, DnsProtocolConfig, DogemapProtocolConfig, WebhooksConfig,
+    ProtocolsConfig, DnsProtocolConfig, DogemapProtocolConfig, LottoProtocolConfig, WebhooksConfig,
     DEFAULT_DOGECOIN_RPC_THREADS, DEFAULT_DOGECOIN_RPC_TIMEOUT, DEFAULT_INDEXER_CHANNEL_CAPACITY,
     DEFAULT_LRU_CACHE_SIZE, DEFAULT_MEMORY_AVAILABLE, DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
 };
@@ -106,6 +106,13 @@ pub struct MetricsConfigToml {
 pub struct ProtocolsConfigToml {
     pub dns: Option<DnsProtocolConfigToml>,
     pub dogemap: Option<DogemapProtocolConfigToml>,
+    pub lotto: Option<LottoProtocolConfigToml>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct LottoProtocolConfigToml {
+    pub enabled: Option<bool>,
+    pub content_prefixes: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -214,6 +221,14 @@ impl ConfigToml {
                 },
                 dogemap: DogemapProtocolConfig {
                     enabled: p.dogemap.as_ref().and_then(|d| d.enabled).unwrap_or(true),
+                },
+                lotto: LottoProtocolConfig {
+                    enabled: p.lotto.as_ref().and_then(|l| l.enabled).unwrap_or(true),
+                    content_prefixes: p
+                        .lotto
+                        .as_ref()
+                        .and_then(|l| l.content_prefixes.clone())
+                        .unwrap_or_else(|| vec![r#"{"p":"doge-lotto""#.to_string()]),
                 },
             }
         };

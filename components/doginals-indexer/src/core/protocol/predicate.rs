@@ -1,6 +1,25 @@
 use config::DoginalsPredicatesConfig;
 use doginals::inscription::Inscription;
 
+pub fn inscription_matches_content_prefixes(
+    inscription: &Inscription,
+    content_prefixes: &[String],
+) -> bool {
+    if content_prefixes.is_empty() {
+        return true;
+    }
+
+    let body_str = inscription
+        .body
+        .as_deref()
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .unwrap_or("");
+
+    content_prefixes
+        .iter()
+        .any(|prefix| body_str.starts_with(prefix.as_str()))
+}
+
 /// Hiro-style predicate-driven selective indexing for Doginals (matches Chainhook/Ordhook design).
 ///
 /// When `enabled = false` (default), every inscription passes. When enabled, an inscription
@@ -30,19 +49,8 @@ pub fn inscription_matches_predicates(
     }
 
     // content_prefix filter: inscription body must start with one of the allowed UTF-8 prefixes
-    if !predicates.content_prefixes.is_empty() {
-        let body_str = inscription
-            .body
-            .as_deref()
-            .and_then(|b| std::str::from_utf8(b).ok())
-            .unwrap_or("");
-        if !predicates
-            .content_prefixes
-            .iter()
-            .any(|p| body_str.starts_with(p.as_str()))
-        {
-            return false;
-        }
+    if !inscription_matches_content_prefixes(inscription, &predicates.content_prefixes) {
+        return false;
     }
 
     true

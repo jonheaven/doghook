@@ -12,7 +12,7 @@ Backward-traversal + reorg-safe (Chainhook engine) + Hiro-style predicate filter
 | Traversal | Forward (carry koinu ranges forward) | Backward (trace to coinbase on reveal) |
 | Reorg safety | Manual | Automatic ZMQ apply/rollback |
 | Selective indexing | No | Yes — MIME type + content prefix predicates |
-| DNS / Dogemap | Query only | Indexed natively, queryable via CLI + webhooks |
+| DNS / Dogemap / doge-lotto | Query only | Indexed natively, queryable via CLI + webhooks |
 | Real-time hooks | No | Yes — POST JSON on every DNS/Dogemap event |
 | Use when | You want a local explorer or wallet | You're building an app, API, or analytics pipeline |
 

@@ -53,3 +53,53 @@ pub fn dogemap_event(
         "claim_timestamp": claim_timestamp,
     })
 }
+
+/// Build a doge-lotto ticket event payload.
+pub fn lotto_ticket_event(
+    lotto_id: &str,
+    ticket_id: &str,
+    inscription_id: &str,
+    tx_id: &str,
+    minted_height: u64,
+    minted_timestamp: u64,
+    seed_numbers: &[u16],
+) -> Value {
+    serde_json::json!({
+        "event": "lotto.ticket_minted",
+        "lotto_id": lotto_id,
+        "ticket_id": ticket_id,
+        "inscription_id": inscription_id,
+        "tx_id": tx_id,
+        "minted_height": minted_height,
+        "minted_timestamp": minted_timestamp,
+        "seed_numbers": seed_numbers,
+    })
+}
+
+/// Build a doge-lotto winner resolution event payload.
+pub fn lotto_winner_event(
+    lotto_id: &str,
+    ticket_id: &str,
+    inscription_id: &str,
+    resolved_height: u64,
+    rank: u32,
+    score: u64,
+    payout_bps: u32,
+    payout_koinu: u64,
+    seed_numbers: &[u16],
+    drawn_numbers: &[u16],
+) -> Value {
+    serde_json::json!({
+        "event": "lotto.winner_resolved",
+        "lotto_id": lotto_id,
+        "ticket_id": ticket_id,
+        "inscription_id": inscription_id,
+        "resolved_height": resolved_height,
+        "rank": rank,
+        "score": score,
+        "payout_bps": payout_bps,
+        "payout_koinu": payout_koinu,
+        "seed_numbers": seed_numbers,
+        "drawn_numbers": drawn_numbers,
+    })
+}
