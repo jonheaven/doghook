@@ -674,40 +674,21 @@ fn broadcast_atomic_lotto_mint(
     let client = dogecoin::utils::bitcoind::dogecoin_get_client(&config.dogecoin, ctx);
     let script_segments = build_lotto_inscription_segments(payload.as_bytes());
     let output_count = if ticket_price_koinu > 0 { 2 } else { 1 };
-    let fee_koinu = calc_lotto_fee(script_sig_size(&script_segments), output_count, DEFAULT_LOTTO_FEE_RATE);
+    let fee_koinu =
+        calc_lotto_fee(script_sig_size(&script_segments), output_count, DEFAULT_LOTTO_FEE_RATE);
     let required_koinu = ticket_price_koinu.saturating_add(fee_koinu);
     let (funding_txid, funding_vout, funding_value, funding_script) =
         select_lotto_utxo(&client, required_koinu, ticket_price_koinu == 0)?;
 
     let funding_koinu = funding_value.to_sat();
-    let change_koinu = funding_koinu.saturating_sub(required_koinu);
-    if ticket_price_koinu == 0 && change_koinu == 0 {
-        return Err(
-            "free lotto mint requires a wallet UTXO larger than the estimated fee so the transaction can keep one standard output".into(),
-        );
-    }
-
-    let mut outputs = Vec::new();
-    if ticket_price_koinu > 0 {
-        outputs.push(TxOut {
-            value: Amount::from_sat(ticket_price_koinu),
-            script_pubkey: parse_dogecoin_address(prize_pool_address)?,
-        });
-    }
-    if change_koinu > 0 || ticket_price_koinu == 0 {
-        let change_address: String = client
-            .call("getrawchangeaddress", &[])
-            .map_err(|e| format!("unable to get raw change address: {e}"))?;
-        let change_value = if ticket_price_koinu == 0 {
-            funding_koinu.saturating_sub(fee_koinu)
-        } else {
-            change_koinu
-        };
-        outputs.push(TxOut {
-            value: Amount::from_sat(change_value),
-            script_pubkey: parse_dogecoin_address(&change_address)?,
-        });
-    }
+    let prize_pool_script = parse_dogecoin_address(prize_pool_address)?;
+    let (outputs, change_koinu) = build_atomic_lotto_outputs(
+        &client,
+        &prize_pool_script,
+        ticket_price_koinu,
+        funding_koinu,
+        fee_koinu,
+    )?;
 
     let template = Transaction {
         version: bitcoin::transaction::Version(1),
@@ -733,24 +714,14 @@ fn broadcast_atomic_lotto_mint(
         funding_value,
     )?;
 
-    let final_tx = Transaction {
-        version: bitcoin::transaction::Version(1),
-        lock_time: LockTime::ZERO,
-        input: vec![TxIn {
-            previous_output: OutPoint {
-                txid: funding_txid,
-                vout: funding_vout,
-            },
-            script_sig: ScriptBuf::from(build_script_sig(
-                &script_segments,
-                &sig_bytes,
-                &pubkey_bytes,
-            )),
-            sequence: Sequence::MAX,
-            witness: bitcoin::Witness::new(),
-        }],
-        output: outputs,
-    };
+    let final_tx = build_atomic_lotto_signed_tx(
+        funding_txid,
+        funding_vout,
+        outputs,
+        &script_segments,
+        &sig_bytes,
+        &pubkey_bytes,
+    );
 
     let txid = client
         .send_raw_transaction(&final_tx)
@@ -759,12 +730,84 @@ fn broadcast_atomic_lotto_mint(
     Ok(AtomicLottoMintResult {
         txid,
         fee_koinu,
-        change_koinu: if ticket_price_koinu == 0 {
+        change_koinu,
+    })
+}
+
+fn build_atomic_lotto_outputs(
+    client: &dogecoin::bitcoincore_rpc::Client,
+    prize_pool_script: &ScriptBuf,
+    ticket_price_koinu: u64,
+    funding_koinu: u64,
+    fee_koinu: u64,
+) -> Result<(Vec<TxOut>, u64), String> {
+    let required_koinu = ticket_price_koinu.saturating_add(fee_koinu);
+    let change_koinu = funding_koinu.saturating_sub(required_koinu);
+
+    if ticket_price_koinu == 0 && change_koinu == 0 {
+        return Err(
+            "free lotto mint requires a wallet UTXO larger than the estimated fee so the transaction can keep one standard output"
+                .into(),
+        );
+    }
+
+    let mut outputs = Vec::new();
+
+    // Atomic payment output in the same transaction as the inscription envelope.
+    if ticket_price_koinu > 0 {
+        outputs.push(TxOut {
+            value: Amount::from_sat(ticket_price_koinu),
+            script_pubkey: prize_pool_script.clone(),
+        });
+    }
+
+    let effective_change_koinu = if change_koinu > 0 || ticket_price_koinu == 0 {
+        let change_address: String = client
+            .call("getrawchangeaddress", &[])
+            .map_err(|e| format!("unable to get raw change address: {e}"))?;
+        let change_value = if ticket_price_koinu == 0 {
             funding_koinu.saturating_sub(fee_koinu)
         } else {
             change_koinu
-        },
-    })
+        };
+        outputs.push(TxOut {
+            value: Amount::from_sat(change_value),
+            script_pubkey: parse_dogecoin_address(&change_address)?,
+        });
+        change_value
+    } else {
+        0
+    };
+
+    Ok((outputs, effective_change_koinu))
+}
+
+fn build_atomic_lotto_signed_tx(
+    funding_txid: Txid,
+    funding_vout: u32,
+    outputs: Vec<TxOut>,
+    script_segments: &[Vec<u8>],
+    sig_bytes: &[u8],
+    pubkey_bytes: &[u8],
+) -> Transaction {
+    Transaction {
+        version: bitcoin::transaction::Version(1),
+        lock_time: LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint {
+                txid: funding_txid,
+                vout: funding_vout,
+            },
+            script_sig: ScriptBuf::from(build_script_sig(
+                script_segments,
+                sig_bytes,
+                pubkey_bytes,
+            )),
+            sequence: Sequence::MAX,
+            witness: bitcoin::Witness::new(),
+        }],
+        output: outputs,
+    }
 }
 
 fn build_lotto_inscription_segments(payload: &[u8]) -> Vec<Vec<u8>> {
