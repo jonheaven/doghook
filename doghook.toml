@@ -43,8 +43,8 @@ password = "postgres"
 [dogecoin]
 network = "mainnet"
 rpc_url = "http://127.0.0.1:22555"
-rpc_username = "dogewizard"
-rpc_password = "typejawn"
+# rpc_username and rpc_password are read from env vars DOGE_RPC_USERNAME / DOGE_RPC_PASSWORD.
+# You may also set them here, but do not commit credentials to git.
 zmq_url = "tcp://127.0.0.1:28332"
 
 # Resource configuration

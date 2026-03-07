@@ -11,7 +11,7 @@ use dogecoin::{
 };
 use deadpool_postgres::Transaction;
 
-use super::inscription_sequencing::get_bitcoin_network;
+use super::inscription_sequencing::get_dogecoin_network;
 use crate::{
     core::{compute_next_satpoint_data, SatPosition},
     db::doginals_pg,
@@ -74,7 +74,7 @@ pub async fn augment_block_with_transfers(
     reveals_count: &mut usize,
     transfers_count: &mut usize,
 ) -> Result<(), String> {
-    let network = get_bitcoin_network(&block.metadata.network);
+    let network = get_dogecoin_network(&block.metadata.network);
     let mut block_transferred_satpoints = HashMap::new();
     for (tx_index, tx) in block.transactions.iter_mut().enumerate() {
         augment_transaction_with_ordinal_transfers(

@@ -80,8 +80,8 @@ pub struct ResourcesConfigToml {
 pub struct DogecoinConfigToml {
     pub network: String,
     pub rpc_url: String,
-    pub rpc_username: String,
-    pub rpc_password: String,
+    pub rpc_username: Option<String>,
+    pub rpc_password: Option<String>,
     pub zmq_url: String,
 }
 
@@ -196,8 +196,12 @@ impl ConfigToml {
             },
             dogecoin: DogecoinConfig {
                 rpc_url: toml.dogecoin.rpc_url.to_string(),
-                rpc_username: toml.dogecoin.rpc_username.to_string(),
-                rpc_password: toml.dogecoin.rpc_password.to_string(),
+                rpc_username: toml.dogecoin.rpc_username
+                    .or_else(|| std::env::var("DOGE_RPC_USERNAME").ok())
+                    .ok_or("dogecoin.rpc_username missing (set in doghook.toml or DOGE_RPC_USERNAME env var)")?,
+                rpc_password: toml.dogecoin.rpc_password
+                    .or_else(|| std::env::var("DOGE_RPC_PASSWORD").ok())
+                    .ok_or("dogecoin.rpc_password missing (set in doghook.toml or DOGE_RPC_PASSWORD env var)")?,
                 network: bitcoin_network,
                 zmq_url: toml.dogecoin.zmq_url,
             },

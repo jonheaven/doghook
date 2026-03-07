@@ -25,7 +25,7 @@ use crate::{
         protocol::{
             inscription_parsing::parse_inscriptions_in_standardized_block,
             inscription_sequencing::{
-                get_bitcoin_network, get_jubilee_block_height,
+                get_dogecoin_network, get_jubilee_block_height,
                 parallelize_inscription_data_computations,
                 update_block_inscriptions_with_consensus_sequence_data,
             },
@@ -103,7 +103,7 @@ pub async fn index_block(
 
     // Invalidate and recompute cursor when crossing the jubilee height
     if block.block_identifier.index
-        == get_jubilee_block_height(&get_bitcoin_network(&block.metadata.network))
+        == get_jubilee_block_height(&get_dogecoin_network(&block.metadata.network))
     {
         sequence_cursor.reset();
     }

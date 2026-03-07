@@ -368,7 +368,7 @@ pub fn get_jubilee_block_height(network: &Network) -> u64 {
     }
 }
 
-pub fn get_bitcoin_network(network: &DogecoinNetwork) -> Network {
+pub fn get_dogecoin_network(network: &DogecoinNetwork) -> Network {
     match network {
         DogecoinNetwork::Mainnet => Network::Bitcoin,
         DogecoinNetwork::Regtest => Network::Regtest,
@@ -392,7 +392,7 @@ pub async fn update_block_inscriptions_with_consensus_sequence_data(
         doginals_pg::get_reinscriptions_for_block(inscriptions_data, db_tx).await?;
     // Keep a reference of inscribed satoshis that will go towards miner fees. These would be unbound inscriptions.
     let mut sat_overflows = VecDeque::new();
-    let network = get_bitcoin_network(&block.metadata.network);
+    let network = get_dogecoin_network(&block.metadata.network);
     let block_height = block.block_identifier.index;
 
     for (tx_index, tx) in block.transactions.iter_mut().enumerate() {
