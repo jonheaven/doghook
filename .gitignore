@@ -1,0 +1,11 @@
+ref/
+
+# Rust build output
+target/
+
+# Local runtime/indexer state
+data/
+
+# One-off local error captures
+dunes_err.txt
+dunes_errors.txt

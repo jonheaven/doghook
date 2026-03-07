@@ -1,0 +1,57 @@
+# Doghook Configuration
+# Generated from F:\DogecoinData\dogecoin.conf
+
+[storage]
+working_dir = "data"
+
+[metrics]
+enabled = true
+prometheus_port = 9153
+
+# Doginals (Dogecoin Ordinals) indexer configuration
+[doginals.db]
+database = "doginals"
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "postgres"
+
+# DRC-20 (Dogecoin's BRC-20 equivalent) configuration
+[doginals.meta_protocols.drc20]
+enabled = true
+lru_cache_size = 10000
+
+[doginals.meta_protocols.drc20.db]
+database = "drc20"
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "postgres"
+
+# Dunes (Dogecoin's Runes equivalent) indexer configuration
+[dunes]
+lru_cache_size = 10000
+
+[dunes.db]
+database = "dunes"
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "postgres"
+
+# Dogecoin RPC connection (from F:\DogecoinData\dogecoin.conf)
+[dogecoin]
+network = "mainnet"
+rpc_url = "http://127.0.0.1:22555"
+rpc_username = "dogewizard"
+rpc_password = "typejawn"
+zmq_url = "tcp://127.0.0.1:28332"
+
+# Resource configuration
+[resources]
+ulimit = 2048
+cpu_core_available = 6
+memory_available = 16
+dogecoin_rpc_threads = 4
+dogecoin_rpc_timeout = 15
+indexer_channel_capacity = 10

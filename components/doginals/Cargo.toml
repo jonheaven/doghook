@@ -1,0 +1,18 @@
+[package]
+name = "doginals"
+version.workspace = true
+description = "Core types for Doginals — Dogecoin inscriptions, koinu numbering, and Dunes"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+bitcoin = { workspace = true }
+ciborium = "0.2.2"
+derive_more = { version = "1.0.0", features = ["display", "from_str"] }
+serde = { version = "1.0.137", features = ["derive"] }
+serde_json = { version = "1.0.81", features = ["preserve_order"] }
+serde_with = "3.7.0"
+thiserror = "2.0.0"
+
+[dev-dependencies]
+pretty_assertions = "1.2.1"
