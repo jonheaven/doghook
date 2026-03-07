@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 
-/// Index Dogecoin meta-protocols like Doginals, DRC-20, and Dunes
+/// doghook — Dogecoin Doginals / DNS / Dogemap / Dunes indexer
 #[derive(Parser, Debug)]
-#[clap(name = "dogecoin-indexer", author, version, about, long_about = None)]
+#[clap(name = "doghook", author, version, about, long_about = None)]
 pub enum Protocol {
     /// Doginals index commands
     #[clap(subcommand)]
@@ -10,9 +10,92 @@ pub enum Protocol {
     /// Dunes index commands
     #[clap(subcommand)]
     Dunes(Command),
+    /// Dogecoin Name System (DNS) query commands
+    #[clap(subcommand)]
+    Dns(DnsCommand),
+    /// Dogemap (block claim) query commands
+    #[clap(subcommand)]
+    Dogemap(DogemapCommand),
     /// Configuration file commands
     #[clap(subcommand)]
     Config(ConfigCommand),
+}
+
+// ---------------------------------------------------------------------------
+// DNS subcommands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand, PartialEq, Clone, Debug)]
+pub enum DnsCommand {
+    /// Resolve a Dogecoin Name System name (e.g. satoshi.doge)
+    #[clap(name = "resolve")]
+    Resolve(DnsResolveCommand),
+    /// List registered DNS names
+    #[clap(name = "list")]
+    List(DnsListCommand),
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DnsResolveCommand {
+    /// Name to resolve (e.g. satoshi.doge)
+    pub name: String,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DnsListCommand {
+    /// Filter by namespace (e.g. doge, shibe, kabosu)
+    #[clap(long)]
+    pub namespace: Option<String>,
+    /// Maximum number of results
+    #[clap(long, default_value = "100")]
+    pub limit: usize,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Dogemap subcommands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand, PartialEq, Clone, Debug)]
+pub enum DogemapCommand {
+    /// Show claim status for a block number
+    #[clap(name = "status")]
+    Status(DogemapStatusCommand),
+    /// List all claimed block numbers
+    #[clap(name = "list")]
+    List(DogemapListCommand),
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DogemapStatusCommand {
+    /// Block number to query (e.g. 5056597)
+    pub block_number: u32,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DogemapListCommand {
+    /// Maximum number of results
+    #[clap(long, default_value = "100")]
+    pub limit: usize,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
 }
 
 #[derive(Subcommand, PartialEq, Clone, Debug)]

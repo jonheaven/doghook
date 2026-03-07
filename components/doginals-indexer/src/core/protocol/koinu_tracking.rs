@@ -48,7 +48,7 @@ pub struct WatchedSatpoint {
 }
 
 pub fn parse_output_and_offset_from_koinupoint(
-    satpoint: &String,
+    satpoint: &str,
 ) -> Result<(String, Option<u64>), String> {
     let parts: Vec<&str> = satpoint.split(':').collect();
     let tx_id = parts
@@ -167,6 +167,7 @@ pub fn compute_koinupoint_post_transfer(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn augment_transaction_with_ordinal_transfers(
     tx: &mut DogecoinTransactionData,
     tx_index: usize,

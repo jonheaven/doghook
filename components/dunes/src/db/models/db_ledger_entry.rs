@@ -22,14 +22,15 @@ pub struct DbLedgerEntry {
 }
 
 impl DbLedgerEntry {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_values(
         amount: Option<u128>,
         rune_id: DuneId,
-        block_hash: &String,
+        block_hash: &str,
         block_height: u64,
         tx_index: u32,
         event_index: u32,
-        tx_id: &String,
+        tx_id: &str,
         output: Option<u32>,
         address: Option<&String>,
         receiver_address: Option<&String>,

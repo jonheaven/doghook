@@ -74,7 +74,7 @@ pub async fn get_token_available_balance_for_address<T: GenericClient>(
 }
 
 pub async fn get_unsent_token_transfers<T: GenericClient>(
-    ordinal_numbers: &Vec<u64>,
+    ordinal_numbers: &[u64],
     client: &T,
 ) -> Result<Vec<DbOperation>, String> {
     if ordinal_numbers.is_empty() {
@@ -113,7 +113,7 @@ pub async fn get_unsent_token_transfers<T: GenericClient>(
 }
 
 pub async fn insert_tokens<T: GenericClient>(
-    tokens: &Vec<DbToken>,
+    tokens: &[DbToken],
     client: &T,
 ) -> Result<(), String> {
     if tokens.is_empty() {
@@ -155,7 +155,7 @@ pub async fn insert_tokens<T: GenericClient>(
 }
 
 pub async fn insert_operations<T: GenericClient>(
-    operations: &Vec<DbOperation>,
+    operations: &[DbOperation],
     client: &T,
 ) -> Result<(), String> {
     if operations.is_empty() {

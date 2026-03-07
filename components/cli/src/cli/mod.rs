@@ -11,7 +11,10 @@ use std::{
 
 use dogecoin::{try_error, try_info, types::BlockIdentifier, utils::Context};
 use clap::Parser;
-use commands::{Command, ConfigCommand, DatabaseCommand, IndexCommand, Protocol, ServiceCommand};
+use commands::{
+    Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand, IndexCommand, Protocol,
+    ServiceCommand,
+};
 use config::{generator::generate_toml_config, Config};
 use hiro_system_kit;
 
@@ -159,6 +162,135 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                     dunes::db::run_migrations(&config, ctx).await;
                 }
             },
+        },
+        Protocol::Dns(subcmd) => match subcmd {
+            DnsCommand::Resolve(cmd) => {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                config.assert_doginals_config()?;
+                match doginals_indexer::dns_resolve(&cmd.name, &config).await? {
+                    Some(row) => {
+                        if cmd.json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "name": row.name,
+                                    "inscription_id": row.inscription_id,
+                                    "block_height": row.block_height,
+                                    "block_timestamp": row.block_timestamp,
+                                })
+                            );
+                        } else {
+                            println!("Name:           {}", row.name);
+                            println!("Inscription ID: {}", row.inscription_id);
+                            println!("Block Height:   {}", row.block_height);
+                            println!("Timestamp:      {}", row.block_timestamp);
+                        }
+                    }
+                    None => {
+                        if cmd.json {
+                            println!("null");
+                        } else {
+                            println!("Name not found: {}", cmd.name);
+                        }
+                        process::exit(1);
+                    }
+                }
+            }
+            DnsCommand::List(cmd) => {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                config.assert_doginals_config()?;
+                let (rows, total) =
+                    doginals_indexer::dns_list(cmd.namespace.as_deref(), cmd.limit, 0, &config)
+                        .await?;
+                if cmd.json {
+                    let json_rows: Vec<_> = rows
+                        .iter()
+                        .map(|r| {
+                            serde_json::json!({
+                                "name": r.name,
+                                "inscription_id": r.inscription_id,
+                                "block_height": r.block_height,
+                                "block_timestamp": r.block_timestamp,
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::json!({ "total": total, "names": json_rows })
+                    );
+                } else {
+                    println!("DNS Names (Total: {total})");
+                    println!("{:<40} {:<70} {}", "Name", "Inscription ID", "Height");
+                    println!("{}", "-".repeat(115));
+                    for row in &rows {
+                        println!("{:<40} {:<70} {}", row.name, row.inscription_id, row.block_height);
+                    }
+                }
+            }
+        },
+        Protocol::Dogemap(subcmd) => match subcmd {
+            DogemapCommand::Status(cmd) => {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                config.assert_doginals_config()?;
+                match doginals_indexer::dogemap_status(cmd.block_number, &config).await? {
+                    Some(row) => {
+                        if cmd.json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "block_number": row.block_number,
+                                    "inscription_id": row.inscription_id,
+                                    "claim_height": row.claim_height,
+                                    "claim_timestamp": row.claim_timestamp,
+                                })
+                            );
+                        } else {
+                            println!("Block Number:   {}", row.block_number);
+                            println!("Inscription ID: {}", row.inscription_id);
+                            println!("Claim Height:   {}", row.claim_height);
+                            println!("Timestamp:      {}", row.claim_timestamp);
+                        }
+                    }
+                    None => {
+                        if cmd.json {
+                            println!("null");
+                        } else {
+                            println!("Block {} is unclaimed", cmd.block_number);
+                        }
+                        process::exit(1);
+                    }
+                }
+            }
+            DogemapCommand::List(cmd) => {
+                let config = Config::from_file_path(&cmd.config_path)?;
+                config.assert_doginals_config()?;
+                let (rows, total) =
+                    doginals_indexer::dogemap_list(cmd.limit, 0, &config).await?;
+                if cmd.json {
+                    let json_rows: Vec<_> = rows
+                        .iter()
+                        .map(|r| {
+                            serde_json::json!({
+                                "block_number": r.block_number,
+                                "inscription_id": r.inscription_id,
+                                "claim_height": r.claim_height,
+                                "claim_timestamp": r.claim_timestamp,
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::json!({ "total": total, "claims": json_rows })
+                    );
+                } else {
+                    println!("Dogemap Claims (Total: {total})");
+                    println!("{:<12} {:<70} {}", "Block", "Inscription ID", "Claim Height");
+                    println!("{}", "-".repeat(95));
+                    for row in &rows {
+                        println!("{:<12} {:<70} {}", row.block_number, row.inscription_id, row.claim_height);
+                    }
+                }
+            }
         },
         Protocol::Config(subcmd) => match subcmd {
             ConfigCommand::New(cmd) => {

@@ -122,7 +122,7 @@ impl SubAssign<u128> for PgNumericU128 {
 
 impl PartialOrd for PgNumericU128 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.cmp(&other.0))
+        Some(self.cmp(other))
     }
 }
 

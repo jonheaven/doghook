@@ -25,7 +25,7 @@ use crate::db::{
 /// * `db_tx` - DB transaction
 /// * `ctx` - Context
 pub async fn input_rune_balances_from_tx_inputs(
-    inputs: &Vec<TxIn>,
+    inputs: &[TxIn],
     block_output_cache: &HashMap<(String, u32), HashMap<DuneId, Vec<InputRuneBalance>>>,
     output_cache: &mut LruCache<(String, u32), HashMap<DuneId, Vec<InputRuneBalance>>>,
     db_tx: &mut Transaction<'_>,
@@ -98,6 +98,7 @@ pub fn move_block_output_cache_to_output_cache(
 }
 
 /// Creates a new ledger entry while incrementing the `next_event_index`.
+#[allow(clippy::too_many_arguments)]
 pub fn new_sequential_ledger_entry(
     location: &TransactionLocation,
     amount: Option<u128>,
@@ -139,6 +140,7 @@ pub fn new_sequential_ledger_entry(
 /// * `amount` - Amount of balance to move. If value is zero, all inputs will be moved to the output.
 /// * `next_event_index` - Next sequential event index to create. This value will be modified.
 /// * `ctx` - Context.
+#[allow(clippy::too_many_arguments)]
 pub fn move_rune_balance_to_output(
     location: &TransactionLocation,
     output: Option<u32>,

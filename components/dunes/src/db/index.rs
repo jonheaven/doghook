@@ -12,7 +12,6 @@ use dogecoin::{
     utils::Context,
 };
 use deadpool_postgres::Client;
-use hex;
 use doginals_parser::{Artifact, Flaw, Dunestone};
 use postgres::pg_begin;
 

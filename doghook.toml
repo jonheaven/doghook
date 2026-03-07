@@ -55,6 +55,31 @@ rpc_url = "http://127.0.0.1:22555"
 # You may also set them here, but do not commit credentials to git.
 zmq_url = "tcp://127.0.0.1:28332"
 
+# Protocol enable/disable switches.
+# Set enabled = false to skip indexing that protocol entirely.
+# DNS and Dogemap both default to true (index everything) when this section is absent.
+[protocols.dns]
+enabled = true
+
+[protocols.dogemap]
+enabled = true
+
+# Webhook delivery configuration.
+# When enabled = true, doghook POSTs a JSON event to every URL in the list
+# whenever a new DNS registration or Dogemap claim is indexed.
+#
+# DNS event payload:
+#   { "event": "dns.registered", "name": "satoshi.doge",
+#     "inscription_id": "<txid>i0", "block_height": N, "block_timestamp": N }
+#
+# Dogemap event payload:
+#   { "event": "dogemap.claimed", "block_number": N,
+#     "inscription_id": "<txid>i0", "claim_height": N, "claim_timestamp": N }
+[webhooks]
+enabled = false
+urls = []
+# urls = ["https://your-server.example.com/hook"]
+
 # Resource configuration
 [resources]
 ulimit = 2048

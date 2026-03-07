@@ -94,6 +94,7 @@ impl From<RawEnvelope> for ParsedEnvelope {
 }
 
 impl ParsedEnvelope {
+    #[allow(dead_code)]
     pub(crate) fn from_transaction(transaction: &Transaction) -> Vec<Self> {
         RawEnvelope::from_transaction(transaction)
             .into_iter()
@@ -115,6 +116,7 @@ impl ParsedEnvelope {
 }
 
 impl RawEnvelope {
+    #[allow(dead_code, deprecated)]
     pub(crate) fn from_transaction(transaction: &Transaction) -> Vec<Self> {
         let mut envelopes = Vec::new();
 

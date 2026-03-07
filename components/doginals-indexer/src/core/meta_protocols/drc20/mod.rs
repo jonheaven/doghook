@@ -31,7 +31,7 @@ pub fn drc20_self_mint_activation_height(network: &DogecoinNetwork) -> u64 {
 
 /// Transform a BRC-20 amount `String` (that may or may not have decimals) to a `u128` value we can store in Postgres. The amount
 /// will be shifted to the left by however many decimals the token uses.
-pub fn decimals_str_amount_to_u128(amt: &String, decimals: u8) -> Result<u128, String> {
+pub fn decimals_str_amount_to_u128(amt: &str, decimals: u8) -> Result<u128, String> {
     let parts: Vec<&str> = amt.split('.').collect();
     let first = parts
         .first()

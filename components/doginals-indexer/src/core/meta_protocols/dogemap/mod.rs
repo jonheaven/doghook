@@ -1,13 +1,13 @@
-/// Dogemap (Dogecoin Bitmap) detection.
-///
-/// Detection rules (mirrors dog's `index_dogemap_transaction`):
-///   - Inscription body must be valid UTF-8 text (after trim).
-///   - Must end with `.dogemap`.
-///   - The prefix must be a non-empty string of ASCII digits.
-///   - Parse prefix as u32 — the target block number.
-///   - Target block must be ≤ the current block height (can't claim the future).
-///   - First inscription wins (across blocks via SQL `ON CONFLICT DO NOTHING`;
-///     within a block via `HashMap::entry().or_insert()`).
+//! Dogemap (Dogecoin Bitmap) detection.
+//!
+//! Detection rules (mirrors dog's `index_dogemap_transaction`):
+//! - Inscription body must be valid UTF-8 text (after trim).
+//! - Must end with `.dogemap`.
+//! - The prefix must be a non-empty string of ASCII digits.
+//! - Parse prefix as u32 — the target block number.
+//! - Target block must be ≤ the current block height (can't claim the future).
+//! - First inscription wins (across blocks via SQL `ON CONFLICT DO NOTHING`;
+//!   within a block via `HashMap::entry().or_insert()`).
 
 /// Attempt to parse `body` as a Dogemap claim.
 ///

@@ -97,6 +97,7 @@ pub(crate) fn wait_for_thread_finish(
 }
 
 /// Moves our block pool with a newly received standardized block
+#[allow(clippy::too_many_arguments)]
 async fn advance_block_pool(
     block: DogecoinBlockData,
     block_pool: &Arc<Mutex<BlockPool>>,
@@ -259,6 +260,7 @@ async fn initialize_block_pool(
 
 /// Runloop designed to receive Bitcoin blocks through a [BlockProcessor] and send them to a [ForkScratchPad] so it can advance
 /// the canonical chain.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn block_processor_runloop(
     indexer_commands_tx: &Sender<IndexerCommand>,
     index_chain_tip: &Option<BlockIdentifier>,
@@ -325,6 +327,7 @@ pub(crate) async fn block_processor_runloop(
 /// Starts a bitcoind RPC block download pipeline that will send us all historical bitcoin blocks in a parallel fashion. We will
 /// then stream these blocks into our block pool so they can be fed into the configured [Indexer]. This will eventually bring the
 /// index chain tip to `target_block_height`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn download_rpc_blocks(
     indexer: &Indexer,
     block_processor: &mut BlockProcessor,

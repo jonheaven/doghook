@@ -23,6 +23,7 @@ pub fn first_inscription_height(config: &Config) -> u64 {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn new_traversals_cache(
 ) -> DashMap<(u32, [u8; 8]), (Vec<([u8; 8], u32, u16, u64)>, Vec<u64>), BuildHasherDefault<FxHasher>>
 {

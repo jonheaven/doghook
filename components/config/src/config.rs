@@ -20,6 +20,17 @@ pub struct Config {
     pub resources: ResourcesConfig,
     pub storage: StorageConfig,
     pub metrics: Option<MetricsConfig>,
+    pub protocols: ProtocolsConfig,
+    pub webhooks: WebhooksConfig,
+}
+
+/// Webhook delivery configuration.
+/// POST requests are fired for each DNS registration and Dogemap claim.
+#[derive(Clone, Debug, Default)]
+pub struct WebhooksConfig {
+    pub enabled: bool,
+    /// List of URLs that will receive POST requests for every event.
+    pub urls: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +40,33 @@ pub struct DoginalConfig {
     /// Hiro-style predicate filtering: only index inscriptions matching these rules.
     /// When predicates.enabled = false (default), all inscriptions are indexed.
     pub predicates: Option<DoginalsPredicatesConfig>,
+}
+
+/// Per-protocol enable/disable switches.
+/// Absent from toml = both enabled by default (backward compatible).
+#[derive(Clone, Debug)]
+pub struct ProtocolsConfig {
+    pub dns: DnsProtocolConfig,
+    pub dogemap: DogemapProtocolConfig,
+}
+
+impl Default for ProtocolsConfig {
+    fn default() -> Self {
+        Self {
+            dns: DnsProtocolConfig { enabled: true },
+            dogemap: DogemapProtocolConfig { enabled: true },
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DnsProtocolConfig {
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct DogemapProtocolConfig {
+    pub enabled: bool,
 }
 
 /// Hiro-style predicate-driven selective indexing for Doginals (matches Chainhook/Ordhook design).
@@ -170,6 +208,8 @@ impl Config {
                 enabled: true,
                 prometheus_port: 9153,
             }),
+            protocols: ProtocolsConfig::default(),
+            webhooks: WebhooksConfig::default(),
         }
     }
 
@@ -193,6 +233,22 @@ impl Config {
         config.resources.dogecoin_rpc_threads = 1;
         config.resources.cpu_core_available = 1;
         config
+    }
+
+    pub fn webhook_urls(&self) -> &[String] {
+        if self.webhooks.enabled {
+            &self.webhooks.urls
+        } else {
+            &[]
+        }
+    }
+
+    pub fn dns_enabled(&self) -> bool {
+        self.protocols.dns.enabled
+    }
+
+    pub fn dogemap_enabled(&self) -> bool {
+        self.protocols.dogemap.enabled
     }
 
     pub fn doginals_predicates(&self) -> Option<&DoginalsPredicatesConfig> {

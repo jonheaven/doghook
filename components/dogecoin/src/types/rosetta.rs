@@ -56,7 +56,7 @@ impl Ord for BlockIdentifier {
 
 impl PartialOrd for BlockIdentifier {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(other.cmp(self))
+        Some(self.cmp(other))
     }
 }
 

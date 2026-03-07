@@ -1,11 +1,11 @@
-/// Dogecoin Name System (DNS) detection.
-///
-/// Detection rules (mirrors dog's `index_dns_transaction`):
-///   - Inscription body must be valid UTF-8 text (after trim).
-///   - Exactly one dot: `<label>.<namespace>` where both parts are non-empty.
-///   - The namespace must be in the canonical Dogecoin namespace list.
-///   - First inscription wins (across blocks via SQL `ON CONFLICT DO NOTHING`;
-///     within a block via `HashMap::entry().or_insert()`).
+//! Dogecoin Name System (DNS) detection.
+//!
+//! Detection rules (mirrors dog's `index_dns_transaction`):
+//! - Inscription body must be valid UTF-8 text (after trim).
+//! - Exactly one dot: `<label>.<namespace>` where both parts are non-empty.
+//! - The namespace must be in the canonical Dogecoin namespace list.
+//! - First inscription wins (across blocks via SQL `ON CONFLICT DO NOTHING`;
+//!   within a block via `HashMap::entry().or_insert()`).
 
 /// Returns `true` if `namespace` is a recognised Dogecoin DNS namespace.
 /// List kept in sync with dog's `is_valid_dns_namespace`.

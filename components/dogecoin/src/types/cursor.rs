@@ -62,7 +62,7 @@ const INPUT_SIZE: usize = TXID_LEN + 4 + 2 + SATS_LEN;
 const OUTPUT_SIZE: usize = 8;
 
 impl BlockBytesCursor<'_> {
-    pub fn new(bytes: &[u8]) -> BlockBytesCursor {
+    pub fn new(bytes: &[u8]) -> BlockBytesCursor<'_> {
         let tx_len = u16::from_be_bytes([bytes[0], bytes[1]]);
         BlockBytesCursor { bytes, tx_len }
     }
@@ -183,7 +183,7 @@ impl BlockBytesCursor<'_> {
         entry
     }
 
-    pub fn iter_tx(&self) -> TransactionBytesCursorIterator {
+    pub fn iter_tx(&self) -> TransactionBytesCursorIterator<'_> {
         TransactionBytesCursorIterator::new(self)
     }
 

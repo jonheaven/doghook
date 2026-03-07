@@ -43,7 +43,7 @@ impl AddAssign<u32> for PgBigIntU32 {
 
 impl PartialOrd for PgBigIntU32 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.cmp(&other.0))
+        Some(self.cmp(other))
     }
 }
 

@@ -19,6 +19,7 @@ impl Display for Degree {
 }
 
 impl From<Koinu> for Degree {
+  #[allow(clippy::modulo_one)]
   fn from(sat: Koinu) -> Self {
     let height = sat.height().n();
     Degree {

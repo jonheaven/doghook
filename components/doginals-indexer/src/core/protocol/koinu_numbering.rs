@@ -44,6 +44,7 @@ impl TraversalResult {
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn compute_koinu_number(
     block_identifier: &BlockIdentifier,
     transaction_identifier: &TransactionIdentifier,

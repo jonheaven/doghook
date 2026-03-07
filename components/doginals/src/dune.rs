@@ -90,6 +90,7 @@ impl Dune {
 
     let start = Self::STEPS[usize::try_from(length).unwrap()];
 
+    #[allow(clippy::modulo_one)]
     let remainder = u128::from(progress % Self::UNLOCK_INTERVAL);
 
     Dune(start - ((start - end) * remainder / u128::from(Self::UNLOCK_INTERVAL)))

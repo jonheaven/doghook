@@ -35,10 +35,11 @@ use crate::{
         },
     },
     db::doginals_pg::{self, get_chain_tip_block_height},
-    utils::monitoring::PrometheusMonitoring,
+    utils::{monitoring::PrometheusMonitoring, webhooks},
     PgConnectionPools,
 };
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn process_blocks(
     next_blocks: &mut Vec<DogecoinBlockData>,
     sequence_cursor: &mut SequenceCursor,
@@ -79,9 +80,10 @@ pub async fn process_blocks(
     Ok(updated_blocks)
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn index_block(
     block: &mut DogecoinBlockData,
-    next_blocks: &Vec<DogecoinBlockData>,
+    next_blocks: &[DogecoinBlockData],
     sequence_cursor: &mut SequenceCursor,
     cache_l1: &mut BTreeMap<(TransactionIdentifier, usize, u64), TraversalResult>,
     cache_l2: &Arc<DashMap<(u32, [u8; 8]), TransactionBytesCursor, BuildHasherDefault<FxHasher>>>,
@@ -192,6 +194,13 @@ pub async fn index_block(
                 return Err(format!("Failed to insert DNS names: {}", e));
             }
             try_info!(ctx, "Indexed {} DNS name(s) at block #{block_height}", dns_map.len());
+            let webhook_urls = config.webhook_urls().to_vec();
+            if !webhook_urls.is_empty() {
+                for (name, inscription_id) in &dns_map {
+                    let payload = webhooks::dns_event(name, inscription_id, block_height, block.timestamp);
+                    webhooks::fire_webhooks(&webhook_urls, payload, ctx).await;
+                }
+            }
         }
 
         // Dogemap — write block claims detected in this block
@@ -200,6 +209,13 @@ pub async fn index_block(
                 return Err(format!("Failed to insert Dogemap claims: {}", e));
             }
             try_info!(ctx, "Indexed {} Dogemap claim(s) at block #{block_height}", dogemap_map.len());
+            let webhook_urls = config.webhook_urls().to_vec();
+            if !webhook_urls.is_empty() {
+                for (block_number, inscription_id) in &dogemap_map {
+                    let payload = webhooks::dogemap_event(*block_number, inscription_id, block_height, block.timestamp);
+                    webhooks::fire_webhooks(&webhook_urls, payload, ctx).await;
+                }
+            }
         }
 
         prometheus.metrics_record_inscription_db_write_time(

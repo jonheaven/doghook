@@ -28,7 +28,7 @@ use crate::core::meta_protocols::drc20::{
 /// Bitcoin/Taproot only — Dogecoin has no witness data.
 /// This path is never reached during Dogecoin indexing; `parse_inscriptions_from_standardized_tx`
 /// handles all Dogecoin inscription parsing via script_sig + `from_transactions_dogecoin`.
-#[allow(dead_code)]
+#[allow(dead_code, deprecated)]
 pub fn parse_inscriptions_from_witness(
     input_index: usize,
     witness_bytes: Vec<Vec<u8>>,
@@ -114,6 +114,7 @@ pub fn parse_inscriptions_from_witness(
     Some(inscriptions)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn parse_inscriptions_from_standardized_tx(
     tx: &mut DogecoinTransactionData,
     block_identifier: &BlockIdentifier,
@@ -270,16 +271,20 @@ pub fn parse_inscriptions_from_standardized_tx(
 
         // DNS detection — runs before the predicate filter so DNS names are
         // never accidentally excluded by content-type predicates.
-        if let Some(body) = inscription.body.as_ref() {
-            if let Some(name) = try_parse_dns_name(body) {
-                dns_map.entry(name).or_insert_with(|| reveal_data.inscription_id.clone());
+        if config.dns_enabled() {
+            if let Some(body) = inscription.body.as_ref() {
+                if let Some(name) = try_parse_dns_name(body) {
+                    dns_map.entry(name).or_insert_with(|| reveal_data.inscription_id.clone());
+                }
             }
         }
 
         // Dogemap detection — same reasoning as DNS above.
-        if let Some(body) = inscription.body.as_ref() {
-            if let Some(block_number) = try_parse_dogemap_claim(body, block_identifier.index) {
-                dogemap_map.entry(block_number).or_insert_with(|| reveal_data.inscription_id.clone());
+        if config.dogemap_enabled() {
+            if let Some(body) = inscription.body.as_ref() {
+                if let Some(block_number) = try_parse_dogemap_claim(body, block_identifier.index) {
+                    dogemap_map.entry(block_number).or_insert_with(|| reveal_data.inscription_id.clone());
+                }
             }
         }
 

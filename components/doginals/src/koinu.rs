@@ -188,6 +188,7 @@ impl Koinu {
     // Guard against zero (Dogecoin has SUBSIDY_HALVING_INTERVAL=1, DIFFCHANGE_INTERVAL=1;
     // 1 % 1 = 0 which would cause a divide-by-zero; the degree system doesn't
     // apply to Dogecoin anyway so any non-zero value is safe here).
+    #[allow(clippy::modulo_one)]
     const HALVING_INCREMENT: u32 = {
       let h = SUBSIDY_HALVING_INTERVAL % DIFFCHANGE_INTERVAL;
       if h == 0 { 1 } else { h }
@@ -201,6 +202,7 @@ impl Koinu {
       return Err(ErrorKind::EpochPeriodMismatch.error(degree));
     }
 
+    #[allow(clippy::modulo_one)]
     let epochs_since_cycle_start = relationship % DIFFCHANGE_INTERVAL / HALVING_INCREMENT;
 
     let epoch = cycle_start_epoch + epochs_since_cycle_start;

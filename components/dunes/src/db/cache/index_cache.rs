@@ -99,10 +99,11 @@ impl IndexCache {
     }
 
     /// Creates a fresh transaction index cache.
+    #[allow(clippy::too_many_arguments)]
     pub async fn begin_transaction(
         &mut self,
         location: TransactionLocation,
-        tx_inputs: &Vec<TxIn>,
+        tx_inputs: &[TxIn],
         eligible_outputs: HashMap<u32, ScriptBuf>,
         first_eligible_output: Option<u32>,
         total_outputs: u32,
@@ -450,7 +451,7 @@ impl IndexCache {
 
     /// Take ledger entries returned by the `TransactionCache` and add them to the `DbCache`. Update global balances and counters
     /// as well.
-    fn add_ledger_entries_to_db_cache(&mut self, entries: &Vec<DbLedgerEntry>) {
+    fn add_ledger_entries_to_db_cache(&mut self, entries: &[DbLedgerEntry]) {
         self.db_cache.ledger_entries.extend(entries.clone());
         for entry in entries.iter() {
             match entry.operation {

@@ -247,7 +247,7 @@ pub async fn get_inscriptions_at_block<T: GenericClient>(
 }
 
 pub async fn get_inscribed_satpoints_at_tx_inputs<T: GenericClient>(
-    inputs: &Vec<(usize, String)>,
+    inputs: &[(usize, String)],
     client: &T,
 ) -> Result<HashMap<usize, Vec<WatchedSatpoint>>, String> {
     let mut results = HashMap::new();
@@ -1174,6 +1174,157 @@ pub async fn rollback_dogemap_claims<T: GenericClient>(
         .await
         .map_err(|e| format!("rollback_dogemap_claims: {e}"))?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// DNS query helpers
+// ---------------------------------------------------------------------------
+
+pub struct DnsNameRow {
+    pub name: String,
+    pub inscription_id: String,
+    pub block_height: u64,
+    pub block_timestamp: u64,
+}
+
+pub async fn get_dns_name<T: GenericClient>(
+    name: &str,
+    client: &T,
+) -> Result<Option<DnsNameRow>, String> {
+    let row = client
+        .query_opt(
+            "SELECT name, inscription_id, block_height, block_timestamp
+             FROM dns_names WHERE name = $1",
+            &[&name],
+        )
+        .await
+        .map_err(|e| format!("get_dns_name: {e}"))?;
+    Ok(row.map(|r| DnsNameRow {
+        name: r.get(0),
+        inscription_id: r.get(1),
+        block_height: r.get::<_, i64>(2) as u64,
+        block_timestamp: r.get::<_, i64>(3) as u64,
+    }))
+}
+
+/// List all DNS names, optionally filtered by namespace (e.g. "doge").
+/// Ordered by block_height ascending (first registered first).
+pub async fn list_dns_names<T: GenericClient>(
+    namespace: Option<&str>,
+    limit: usize,
+    offset: usize,
+    client: &T,
+) -> Result<Vec<DnsNameRow>, String> {
+    let rows = match namespace {
+        Some(ns) => {
+            let pattern = format!("%.{}", ns);
+            client
+                .query(
+                    "SELECT name, inscription_id, block_height, block_timestamp
+                     FROM dns_names WHERE name LIKE $1
+                     ORDER BY block_height ASC
+                     LIMIT $2 OFFSET $3",
+                    &[&pattern, &(limit as i64), &(offset as i64)],
+                )
+                .await
+                .map_err(|e| format!("list_dns_names (namespace): {e}"))?
+        }
+        None => {
+            client
+                .query(
+                    "SELECT name, inscription_id, block_height, block_timestamp
+                     FROM dns_names
+                     ORDER BY block_height ASC
+                     LIMIT $1 OFFSET $2",
+                    &[&(limit as i64), &(offset as i64)],
+                )
+                .await
+                .map_err(|e| format!("list_dns_names: {e}"))?
+        }
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| DnsNameRow {
+            name: r.get(0),
+            inscription_id: r.get(1),
+            block_height: r.get::<_, i64>(2) as u64,
+            block_timestamp: r.get::<_, i64>(3) as u64,
+        })
+        .collect())
+}
+
+pub async fn count_dns_names<T: GenericClient>(client: &T) -> Result<i64, String> {
+    let row = client
+        .query_one("SELECT COUNT(*) FROM dns_names", &[])
+        .await
+        .map_err(|e| format!("count_dns_names: {e}"))?;
+    Ok(row.get(0))
+}
+
+// ---------------------------------------------------------------------------
+// Dogemap query helpers
+// ---------------------------------------------------------------------------
+
+pub struct DogemapClaimRow {
+    pub block_number: u64,
+    pub inscription_id: String,
+    pub claim_height: u64,
+    pub claim_timestamp: u64,
+}
+
+pub async fn get_dogemap_claim<T: GenericClient>(
+    block_number: u32,
+    client: &T,
+) -> Result<Option<DogemapClaimRow>, String> {
+    let row = client
+        .query_opt(
+            "SELECT block_number, inscription_id, claim_height, claim_timestamp
+             FROM dogemap_claims WHERE block_number = $1",
+            &[&(block_number as i64)],
+        )
+        .await
+        .map_err(|e| format!("get_dogemap_claim: {e}"))?;
+    Ok(row.map(|r| DogemapClaimRow {
+        block_number: r.get::<_, i64>(0) as u64,
+        inscription_id: r.get(1),
+        claim_height: r.get::<_, i64>(2) as u64,
+        claim_timestamp: r.get::<_, i64>(3) as u64,
+    }))
+}
+
+/// List claimed Dogemap blocks, ordered by block_number ascending.
+pub async fn list_dogemap_claims<T: GenericClient>(
+    limit: usize,
+    offset: usize,
+    client: &T,
+) -> Result<Vec<DogemapClaimRow>, String> {
+    let rows = client
+        .query(
+            "SELECT block_number, inscription_id, claim_height, claim_timestamp
+             FROM dogemap_claims
+             ORDER BY block_number ASC
+             LIMIT $1 OFFSET $2",
+            &[&(limit as i64), &(offset as i64)],
+        )
+        .await
+        .map_err(|e| format!("list_dogemap_claims: {e}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|r| DogemapClaimRow {
+            block_number: r.get::<_, i64>(0) as u64,
+            inscription_id: r.get(1),
+            claim_height: r.get::<_, i64>(2) as u64,
+            claim_timestamp: r.get::<_, i64>(3) as u64,
+        })
+        .collect())
+}
+
+pub async fn count_dogemap_claims<T: GenericClient>(client: &T) -> Result<i64, String> {
+    let row = client
+        .query_one("SELECT COUNT(*) FROM dogemap_claims", &[])
+        .await
+        .map_err(|e| format!("count_dogemap_claims: {e}"))?;
+    Ok(row.get(0))
 }
 
 #[cfg(test)]

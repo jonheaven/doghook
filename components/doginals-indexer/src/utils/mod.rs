@@ -1,4 +1,5 @@
 pub mod monitoring;
+pub mod webhooks;
 
 use dogecoin::types::TransactionIdentifier;
 

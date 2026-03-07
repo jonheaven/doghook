@@ -27,6 +27,7 @@ use crate::{
 
 /// Downloads historical blocks from bitcoind's RPC interface and pushes them to a [BlockProcessor] so they can be indexed
 /// or ingested as needed.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn start_block_download_pipeline(
     config: &Config,
     rpc_client: &Client,

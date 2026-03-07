@@ -202,6 +202,53 @@ async fn new_ordinals_indexer_runloop(
     })
 }
 
+// Re-export row types so callers (CLI) don't need to reach into db internals.
+pub use db::doginals_pg::{DnsNameRow, DogemapClaimRow};
+
+/// Look up a single DNS name registration.
+pub async fn dns_resolve(name: &str, config: &Config) -> Result<Option<DnsNameRow>, String> {
+    let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
+    let client = pg_pool_client(&pool).await?;
+    db::doginals_pg::get_dns_name(name, &client).await
+}
+
+/// List DNS name registrations, optionally filtered by namespace.
+pub async fn dns_list(
+    namespace: Option<&str>,
+    limit: usize,
+    offset: usize,
+    config: &Config,
+) -> Result<(Vec<DnsNameRow>, i64), String> {
+    let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
+    let client = pg_pool_client(&pool).await?;
+    let rows = db::doginals_pg::list_dns_names(namespace, limit, offset, &client).await?;
+    let total = db::doginals_pg::count_dns_names(&client).await?;
+    Ok((rows, total))
+}
+
+/// Look up a single Dogemap claim by block number.
+pub async fn dogemap_status(
+    block_number: u32,
+    config: &Config,
+) -> Result<Option<DogemapClaimRow>, String> {
+    let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
+    let client = pg_pool_client(&pool).await?;
+    db::doginals_pg::get_dogemap_claim(block_number, &client).await
+}
+
+/// List Dogemap claims.
+pub async fn dogemap_list(
+    limit: usize,
+    offset: usize,
+    config: &Config,
+) -> Result<(Vec<DogemapClaimRow>, i64), String> {
+    let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
+    let client = pg_pool_client(&pool).await?;
+    let rows = db::doginals_pg::list_dogemap_claims(limit, offset, &client).await?;
+    let total = db::doginals_pg::count_dogemap_claims(&client).await?;
+    Ok((rows, total))
+}
+
 pub async fn get_chain_tip(config: &Config) -> Result<BlockIdentifier, String> {
     let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
     let ord_client = pg_pool_client(&pool).await?;

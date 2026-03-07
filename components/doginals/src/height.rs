@@ -19,6 +19,7 @@ impl Height {
     epoch_starting_sat + u64::from(self.n() - epoch_starting_height.n()) * epoch.subsidy()
   }
 
+  #[allow(clippy::modulo_one)]
   pub fn period_offset(self) -> u32 {
     self.0 % DIFFCHANGE_INTERVAL
   }

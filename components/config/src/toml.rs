@@ -8,6 +8,7 @@ use bitcoin::Network;
 use crate::{
     DogecoinConfig, Config, DoginalsPredicatesConfig, MetricsConfig, DoginalDrc20Config, DoginalConfig,
     DoginalMetaProtocolsConfig, PgDatabaseConfig, ResourcesConfig, DunesConfig, StorageConfig,
+    ProtocolsConfig, DnsProtocolConfig, DogemapProtocolConfig, WebhooksConfig,
     DEFAULT_DOGECOIN_RPC_THREADS, DEFAULT_DOGECOIN_RPC_TIMEOUT, DEFAULT_INDEXER_CHANNEL_CAPACITY,
     DEFAULT_LRU_CACHE_SIZE, DEFAULT_MEMORY_AVAILABLE, DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
 };
@@ -100,6 +101,30 @@ pub struct MetricsConfigToml {
     pub prometheus_port: u16,
 }
 
+/// Per-protocol enable/disable (all default to `true` when absent).
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct ProtocolsConfigToml {
+    pub dns: Option<DnsProtocolConfigToml>,
+    pub dogemap: Option<DogemapProtocolConfigToml>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct DnsProtocolConfigToml {
+    pub enabled: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct DogemapProtocolConfigToml {
+    pub enabled: Option<bool>,
+}
+
+/// Webhook delivery — optional section; when absent, webhooks are disabled.
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct WebhooksConfigToml {
+    pub enabled: Option<bool>,
+    pub urls: Option<Vec<String>>,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConfigToml {
     pub storage: StorageConfigToml,
@@ -108,6 +133,8 @@ pub struct ConfigToml {
     pub dogecoin: DogecoinConfigToml,
     pub resources: ResourcesConfigToml,
     pub metrics: Option<MetricsConfigToml>,
+    pub protocols: Option<ProtocolsConfigToml>,
+    pub webhooks: Option<WebhooksConfigToml>,
 }
 
 impl ConfigToml {
@@ -179,6 +206,26 @@ impl ConfigToml {
             prometheus_port: metrics.prometheus_port,
         });
 
+        let protocols = {
+            let p = toml.protocols.unwrap_or_default();
+            ProtocolsConfig {
+                dns: DnsProtocolConfig {
+                    enabled: p.dns.as_ref().and_then(|d| d.enabled).unwrap_or(true),
+                },
+                dogemap: DogemapProtocolConfig {
+                    enabled: p.dogemap.as_ref().and_then(|d| d.enabled).unwrap_or(true),
+                },
+            }
+        };
+
+        let webhooks = {
+            let w = toml.webhooks.unwrap_or_default();
+            WebhooksConfig {
+                enabled: w.enabled.unwrap_or(false),
+                urls: w.urls.unwrap_or_default(),
+            }
+        };
+
         let config = Config {
             storage: StorageConfig {
                 working_dir: toml
@@ -220,6 +267,8 @@ impl ConfigToml {
                 zmq_url: toml.dogecoin.zmq_url,
             },
             metrics,
+            protocols,
+            webhooks,
         };
         Ok(config)
     }

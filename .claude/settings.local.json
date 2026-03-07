@@ -10,7 +10,9 @@
       "Bash(cp -r ordhook-ref/components/runes components/dunes)",
       "Bash(cp -r ordhook-ref/components/cli components/cli)",
       "Bash(cargo check --workspace)",
-      "Bash(cargo check --package config)"
+      "Bash(cargo check --package config)",
+      "Bash(cargo clippy --all-targets -- -D warnings)",
+      "Bash(grep -v \"^--$\")"
     ]
   }
 }

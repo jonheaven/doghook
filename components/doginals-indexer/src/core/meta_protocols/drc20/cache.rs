@@ -249,6 +249,7 @@ impl Brc20MemoryCache {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_token_mint<T: GenericClient>(
         &mut self,
         data: &VerifiedDrc20BalanceData,
@@ -304,6 +305,7 @@ impl Brc20MemoryCache {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_token_transfer<T: GenericClient>(
         &mut self,
         data: &VerifiedDrc20BalanceData,
@@ -354,6 +356,7 @@ impl Brc20MemoryCache {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_token_transfer_send<T: GenericClient>(
         &mut self,
         data: &VerifiedDrc20TransferData,

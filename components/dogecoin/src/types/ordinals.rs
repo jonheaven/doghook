@@ -2,6 +2,7 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum OrdinalOperation {
     InscriptionRevealed(OrdinalInscriptionRevealData),
     InscriptionTransferred(OrdinalInscriptionTransferData),

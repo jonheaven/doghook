@@ -36,14 +36,14 @@ use crate::{
 ///
 /// This function will:
 /// 1) Limit the number of ordinals numbers to compute by filtering out all the ordinals numbers  pre-computed
-///     and present in the L1 cache.
+///   and present in the L1 cache.
 /// 2) Create a threadpool, by spawning as many threads as specified by the config to process the batch ordinals to
-///     retrieve the ordinal number.
+///   retrieve the ordinal number.
 /// 3) Consume eventual entries in cache L1
 /// 4) Inject the ordinals to compute (random order) in a priority queue
-///     via the command line).
+///   via the command line).
 /// 5) Keep injecting ordinals from next blocks (if any) as long as the ordinals from the current block are not all
-///     computed and augment the cache L1 for future blocks.
+///   computed and augment the cache L1 for future blocks.
 ///
 /// If the block has already been computed in the past (so presence of ordinals number present in the `inscriptions` db)
 /// the transaction is removed from the set to compute, and not injected in L1 either.
@@ -55,6 +55,7 @@ use crate::{
 /// # Todos / Optimizations
 /// - Pre-computed entries are being consumed from L1, and then re-injected in L1, which is wasting a bunch of cycles.
 ///
+#[allow(clippy::type_complexity)]
 pub fn parallelize_inscription_data_computations(
     block: &DogecoinBlockData,
     next_blocks: &[DogecoinBlockData],
@@ -295,13 +296,14 @@ pub fn parallelize_inscription_data_computations(
 /// 1) Retrieve all the eventual inscriptions previously stored in DB for the block  
 /// 2) Traverse the list of transaction present in the block (except coinbase).
 /// 3) Check if the transaction is present in the cache L1 and augment the cache hit list accordingly and move on to the
-///     next transaction.
+///   next transaction.
 /// 4) Check if the transaction was processed in the pastand move on to the next transaction.
 /// 5) Augment the list of transaction to process.
 ///
 /// # Todos / Optimizations
 /// - DB query (inscriptions + locations) could be expensive.
 ///
+#[allow(clippy::type_complexity)]
 fn get_transactions_to_process(
     block: &DogecoinBlockData,
     cache_l1: &mut BTreeMap<(TransactionIdentifier, usize, u64), TraversalResult>,
@@ -449,6 +451,7 @@ pub async fn update_block_inscriptions_with_consensus_sequence_data(
 /// drafted informations with actual, consensus data, by using informations from `inscription_data` and `reinscription_data`.
 ///
 /// Transactions are not fully correct from a consensus point of view state transient state after the execution of this function.
+#[allow(clippy::too_many_arguments)]
 async fn update_tx_inscriptions_with_consensus_sequence_data(
     tx: &mut DogecoinTransactionData,
     tx_index: usize,
