@@ -15,7 +15,9 @@ config = { path = "../config" }
 doginals-indexer = { path = "../doginals-indexer" }
 dunes = { path = "../dunes" }
 dogecoin = { path = "../dogecoin" }
+doginals = { path = "../doginals" }
 postgres = { path = "../postgres" }
+bitcoin = { workspace = true }
 hex = "0.4.3"
 num_cpus = "1.16.0"
 serde = "1"
@@ -36,6 +38,8 @@ axum = "0.7.5"
 tower = "0.5.1"
 tower-http = { version = "0.6.2", features = ["fs", "trace", "cors"] }
 tokio = { workspace = true }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-core = "0.3"
 askama = "0.12"
 chrono = "0.4"
 deadpool-postgres = { workspace = true }

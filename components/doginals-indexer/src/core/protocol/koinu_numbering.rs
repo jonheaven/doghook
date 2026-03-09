@@ -1,13 +1,15 @@
 use std::{hash::BuildHasherDefault, sync::Arc};
 
 use dogecoin::{
-    try_error,
+    bitcoincore_rpc::RpcApi,
+    try_error, try_warn,
     types::{
         BlockBytesCursor, BlockIdentifier, OrdinalInscriptionNumber, TransactionBytesCursor,
-        TransactionIdentifier,
+        TransactionIdentifier, TransactionInputBytesCursor,
     },
-    utils::Context,
+    utils::{bitcoind::dogecoin_get_client, Context},
 };
+use serde_json::json;
 use config::Config;
 use dashmap::DashMap;
 use fxhash::FxHasher;
@@ -54,7 +56,7 @@ pub fn compute_koinu_number(
         DashMap<(u32, [u8; 8]), TransactionBytesCursor, BuildHasherDefault<FxHasher>>,
     >,
     blocks_db: &rocksdb::DB,
-    _config: &Config,
+    config: &Config,
     ctx: &Context,
 ) -> Result<(TraversalResult, u64, Vec<(u32, [u8; 8], usize)>), String> {
     let mut ordinal_offset = inscription_pointer;
@@ -162,7 +164,16 @@ pub fn compute_koinu_number(
             match find_pinned_block_bytes_at_block_height(ordinal_block_number, 3, blocks_db, ctx) {
                 Some(block) => block,
                 None => {
-                    return Err(format!("block #{ordinal_block_number} not in database (traversing {} / {} in progress)", transaction_identifier.hash, block_identifier.index));
+                    // Block is before our RocksDB start height — fetch the tx directly from RPC.
+                    try_warn!(
+                        ctx,
+                        "block #{ordinal_block_number} not in local DB while traversing {}; fetching tx from RPC",
+                        transaction_identifier.hash
+                    );
+                    let rpc_cursor = fetch_tx_cursor_from_rpc(ordinal_block_number, txid, config, ctx)?;
+                    // Warm the cache so the next iteration takes the fast cached path.
+                    traversals_cache.insert((ordinal_block_number, tx_cursor.0), rpc_cursor);
+                    continue;
                 }
             }
         };
@@ -231,13 +242,11 @@ pub fn compute_koinu_number(
             {
                 Some(entry) => entry,
                 None => {
-                    try_error!(
-                        ctx,
-                        "fatal: unable to retrieve tx ancestor {} in block {ordinal_block_number} (satpoint {}:{inscription_input_index})",
+                    return Err(format!(
+                        "unable to retrieve tx ancestor {} in block #{ordinal_block_number} while traversing satpoint {}:{inscription_input_index}",
                         hex::encode(txid),
                         transaction_identifier.get_hash_bytes_str(),
-                    );
-                    std::process::exit(1);
+                    ));
                 }
             };
 
@@ -299,6 +308,127 @@ pub fn compute_koinu_number(
         },
         inscription_pointer,
         back_track,
+    ))
+}
+
+/// Fetch a `TransactionBytesCursor` for a tx that is not in the local RocksDB blocks store
+/// by querying the Dogecoin Core node directly.
+/// Used as a fallback when the indexer started mid-chain and ancestor blocks are missing.
+fn fetch_tx_cursor_from_rpc(
+    block_height: u32,
+    target_prefix: [u8; 8],
+    config: &Config,
+    ctx: &Context,
+) -> Result<TransactionBytesCursor, String> {
+    let rpc = dogecoin_get_client(&config.dogecoin, ctx);
+
+    // 1. Get the block hash for this height
+    let block_hash = rpc
+        .get_block_hash(block_height as u64)
+        .map_err(|e| format!("RPC getblockhash({block_height}): {e}"))?;
+
+    // 2. Fetch the full block (verbosity 3 includes prevout data when available)
+    let block_json: serde_json::Value = rpc
+        .call("getblock", &[json!(block_hash.to_string()), json!(3)])
+        .map_err(|e| format!("RPC getblock({block_hash}): {e}"))?;
+
+    let txs = block_json["tx"]
+        .as_array()
+        .ok_or_else(|| format!("RPC getblock: no tx array in block #{block_height}"))?;
+
+    for tx_json in txs {
+        let txid_str = match tx_json["txid"].as_str() {
+            Some(s) => s,
+            None => continue,
+        };
+        let txid_bytes = hex::decode(txid_str)
+            .map_err(|e| format!("bad txid hex '{txid_str}': {e}"))?;
+        if txid_bytes.len() < 8 {
+            continue;
+        }
+        // Match by 8-byte prefix (display byte order, same as get_8_hash_bytes)
+        let prefix: [u8; 8] = txid_bytes[..8].try_into().unwrap();
+        if prefix != target_prefix {
+            continue;
+        }
+
+        // Found the tx — build TransactionBytesCursor
+        let mut inputs = Vec::new();
+        if let Some(vins) = tx_json["vin"].as_array() {
+            for vin in vins {
+                // Skip coinbase inputs
+                if vin.get("coinbase").and_then(|v| v.as_str()).is_some() {
+                    continue;
+                }
+                let input_txid_str = vin["txid"]
+                    .as_str()
+                    .ok_or_else(|| "missing vin txid".to_string())?;
+                let input_txid_bytes = hex::decode(input_txid_str)
+                    .map_err(|e| format!("bad input txid hex: {e}"))?;
+                let txin: [u8; 8] = input_txid_bytes[..8]
+                    .try_into()
+                    .map_err(|_| "input txid too short".to_string())?;
+                let vout_idx = vin["vout"]
+                    .as_u64()
+                    .ok_or_else(|| "missing vout".to_string())? as u16;
+
+                // Prefer prevout from verbosity=3 response; fall back to separate RPC calls
+                let (txin_value, input_block_height) = if let Some(prevout) = vin.get("prevout") {
+                    let value_sat = prevout["value"]
+                        .as_f64()
+                        .map(|v| (v * 1e8).round() as u64)
+                        .ok_or_else(|| "missing prevout.value".to_string())?;
+                    let height = prevout["height"]
+                        .as_u64()
+                        .ok_or_else(|| "missing prevout.height".to_string())? as u32;
+                    (value_sat, height)
+                } else {
+                    // Dogecoin Core omitted prevout — fetch parent tx separately
+                    let parent: serde_json::Value = rpc
+                        .call("getrawtransaction", &[json!(input_txid_str), json!(true)])
+                        .map_err(|e| format!("RPC getrawtransaction({input_txid_str}): {e}"))?;
+                    let value_sat = parent["vout"][vout_idx as usize]["value"]
+                        .as_f64()
+                        .map(|v| (v * 1e8).round() as u64)
+                        .ok_or_else(|| format!("missing parent vout[{vout_idx}].value"))?;
+                    let blockhash_str = parent["blockhash"]
+                        .as_str()
+                        .ok_or_else(|| "missing parent tx blockhash".to_string())?;
+                    let header: serde_json::Value = rpc
+                        .call("getblockheader", &[json!(blockhash_str), json!(true)])
+                        .map_err(|e| format!("RPC getblockheader({blockhash_str}): {e}"))?;
+                    let height = header["height"]
+                        .as_u64()
+                        .ok_or_else(|| "missing header height".to_string())? as u32;
+                    (value_sat, height)
+                };
+
+                inputs.push(TransactionInputBytesCursor {
+                    txin,
+                    block_height: input_block_height,
+                    vout: vout_idx,
+                    txin_value,
+                });
+            }
+        }
+
+        let outputs: Vec<u64> = tx_json["vout"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|v| v["value"].as_f64().map(|f| (f * 1e8).round() as u64))
+            .collect();
+
+        return Ok(TransactionBytesCursor {
+            txid: prefix,
+            inputs,
+            outputs,
+        });
+    }
+
+    Err(format!(
+        "tx {} not found in block #{block_height} via RPC",
+        hex::encode(target_prefix)
     ))
 }
 

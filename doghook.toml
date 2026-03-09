@@ -99,6 +99,11 @@ enabled = false
 urls = []
 # urls = ["https://your-server.example.com/hook"]
 
+# Override the default start height for targeted testing.
+# Wipe data/ and all Postgres databases before changing this.
+# Block 4,849,900 is a good spot with DRC-20, DNS, and Dogemap inscriptions nearby.
+# start_block = 4849900
+
 # Resource configuration
 [resources]
 ulimit = 2048

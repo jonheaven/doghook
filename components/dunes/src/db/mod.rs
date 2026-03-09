@@ -22,7 +22,7 @@ pub mod models;
 
 embed_migrations!("../../migrations/dunes");
 pub async fn migrate(pg_client: &mut tokio_postgres::Client, ctx: &Context) {
-    try_info!(ctx, "RunesDb running postgres migrations...");
+    try_info!(ctx, "DunesDb running postgres migrations...");
     match migrations::runner()
         .set_abort_divergent(false)
         .set_abort_missing(false)
@@ -31,10 +31,10 @@ pub async fn migrate(pg_client: &mut tokio_postgres::Client, ctx: &Context) {
         .await
     {
         Ok(_) => {
-            try_info!(ctx, "RunesDb postgres migrations complete");
+            try_info!(ctx, "DunesDb postgres migrations complete");
         }
         Err(e) => {
-            try_error!(ctx, "RunesDb error running pg migrations: {e}");
+            try_error!(ctx, "DunesDb error running pg migrations: {e}");
             process::exit(1);
         }
     };
@@ -45,7 +45,7 @@ pub async fn run_migrations(config: &Config, ctx: &Context) {
     migrate(&mut pg_client, ctx).await;
 }
 
-pub async fn pg_insert_runes(
+pub async fn pg_insert_dunes(
     rows: &[DbDune],
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -75,13 +75,13 @@ pub async fn pg_insert_runes(
 
         if let Err(e) = db_tx
             .query(
-                "INSERT INTO runes \
+                "INSERT INTO dunes \
                    (id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, divisibility, premine, symbol, \
                     terms_amount, terms_cap, terms_height_start, terms_height_end, terms_offset_start, terms_offset_end, turbo, cenotaph, timestamp) \
                  SELECT \
-                   $1, (SELECT COALESCE(MAX(number), 0) + 1 FROM runes), $2, $3, $4, $5, $6, $7, $8, $9, $10, \
+                   $1, (SELECT COALESCE(MAX(number), 0) + 1 FROM dunes), $2, $3, $4, $5, $6, $7, $8, $9, $10, \
                    $11, $12, $13, $14, $15, $16, $17, $18, $19 \
-                 WHERE NOT EXISTS (SELECT 1 FROM runes WHERE name = $2) \
+                 WHERE NOT EXISTS (SELECT 1 FROM dunes WHERE name = $2) \
                  ON CONFLICT (name) DO NOTHING",
                 &params,
             )

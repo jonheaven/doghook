@@ -586,15 +586,19 @@ async fn detect_lotto_burns<T: deadpool_postgres::GenericClient>(
 ) -> Result<Vec<(String, String)>, String> {
     let mut burned = Vec::new();
 
-    // Query inscriptions transferred TO burn address in this block
-    // by looking at the inscription_transfers table
+    // Query inscriptions transferred TO burn address in this block.
+    // `updated_address` and `tx_id` live in `locations`, joined via
+    // (ordinal_number, block_height, tx_index).
     let rows = client
         .query(
-            "SELECT DISTINCT it.inscription_id, it.block_height, it.tx_id
+            "SELECT DISTINCT it.inscription_id, it.block_height, l.tx_id
              FROM inscription_transfers it
              JOIN lotto_tickets lt ON it.inscription_id = lt.inscription_id
-             WHERE it.block_height = $1
-               AND it.updated_address = $2",
+             JOIN locations l ON l.ordinal_number = it.ordinal_number
+                              AND l.block_height = it.block_height
+                              AND l.tx_index = it.tx_index
+             WHERE it.block_height::bigint = $1
+               AND l.address = $2",
             &[&(block_height as i64), &burn_address],
         )
         .await
@@ -614,11 +618,14 @@ async fn detect_lotto_burns<T: deadpool_postgres::GenericClient>(
                     // This is the address that sent the inscription to burn_address
                     let owner_query = client
                         .query_opt(
-                            "SELECT updated_address
-                             FROM inscription_transfers
-                             WHERE inscription_id = $1
-                               AND block_height < $2
-                             ORDER BY block_height DESC, tx_index DESC
+                            "SELECT l.address
+                             FROM inscription_transfers it
+                             JOIN locations l ON l.ordinal_number = it.ordinal_number
+                                              AND l.block_height = it.block_height
+                                              AND l.tx_index = it.tx_index
+                             WHERE it.inscription_id = $1
+                               AND it.block_height::bigint < $2
+                             ORDER BY it.block_height DESC, it.tx_index DESC
                              LIMIT 1",
                             &[&inscription_id, &(block_height as i64)],
                         )
@@ -631,7 +638,7 @@ async fn detect_lotto_burns<T: deadpool_postgres::GenericClient>(
                         // Fallback: genesis address from inscriptions table
                         let genesis_query = client
                             .query_opt(
-                                "SELECT genesis_address FROM inscriptions WHERE id = $1",
+                                "SELECT address FROM inscriptions WHERE inscription_id = $1",
                                 &[&inscription_id],
                             )
                             .await

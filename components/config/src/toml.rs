@@ -155,6 +155,7 @@ pub struct ConfigToml {
     pub resources: ResourcesConfigToml,
     pub metrics: Option<MetricsConfigToml>,
     pub web: Option<WebConfigToml>,
+    pub start_block: Option<u64>,
     pub protocols: Option<ProtocolsConfigToml>,
     pub webhooks: Option<WebhooksConfigToml>,
 }
@@ -283,6 +284,7 @@ impl ConfigToml {
             },
             doginals: ordinals,
             dunes: runes,
+            start_block: toml.start_block,
             resources: ResourcesConfig {
                 ulimit: toml.resources.ulimit.unwrap_or(DEFAULT_ULIMIT),
                 cpu_core_available: toml.resources.cpu_core_available.unwrap_or(num_cpus::get()),

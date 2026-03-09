@@ -13,6 +13,9 @@ use dashmap::DashMap;
 use fxhash::{FxBuildHasher, FxHasher};
 
 pub fn first_inscription_height(config: &Config) -> u64 {
+    if let Some(b) = config.start_block {
+        return b;
+    }
     match config.dogecoin.network {
         // Dogecoin values mirrored from the `dog` indexer chain constants.
         Network::Bitcoin => 4_600_000,

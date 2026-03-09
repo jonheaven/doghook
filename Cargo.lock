@@ -819,6 +819,7 @@ version = "0.1.0"
 dependencies = [
  "askama",
  "axum",
+ "bitcoin 0.32.8",
  "chrono",
  "clap 3.2.25",
  "clap_generate",
@@ -826,8 +827,10 @@ dependencies = [
  "ctrlc",
  "deadpool-postgres",
  "dogecoin",
+ "doginals",
  "doginals-indexer",
  "dunes",
+ "futures-core",
  "hex",
  "hiro-system-kit",
  "num_cpus",
@@ -838,6 +841,7 @@ dependencies = [
  "serde_json",
  "tcmalloc2",
  "tokio",
+ "tokio-stream",
  "toml 0.5.11",
  "tower",
  "tower-http",
@@ -4517,6 +4521,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

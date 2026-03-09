@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doghook Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-active { @apply border-b-2 border-orange-500 text-orange-600 font-semibold; }
+        .status-dot { @apply h-3 w-3 rounded-full; }
+        .status-running { @apply bg-green-500 animate-pulse; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-orange-500 to-yellow-400 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold">🐕 Doghook Explorer</h1>
+                        <p class="text-orange-100 mt-1">Real-time Dogecoin inscription indexer</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <!-- Inscription search -->
+                        <form onsubmit="searchInscription(event)"
+                              class="flex items-center bg-white/20 backdrop-blur-sm rounded-lg overflow-hidden">
+                            <input id="inscription-search" type="text"
+                                   placeholder="Paste inscription ID or txid…"
+                                   class="bg-transparent text-white placeholder-orange-200 text-sm px-3 py-2 w-64 focus:outline-none focus:w-80 transition-all">
+                            <button type="submit"
+                                    class="bg-white/30 hover:bg-white/40 px-3 py-2 text-sm font-semibold transition-colors">
+                                Decode
+                            </button>
+                        </form>
+                        <div class="flex items-center space-x-3 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
+                            <span class="status-dot status-running"></span>
+                            <div class="text-sm">
+                                <div class="font-semibold">Indexing</div>
+                                <div id="status-info" class="text-xs text-orange-100">Loading...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+            <div class="container mx-auto px-4">
+                <div class="flex space-x-8">
+                    <button onclick="switchTab('inscriptions')" id="tab-inscriptions" 
+                            class="py-4 px-2 tab-active transition-colors">
+                        Latest Inscriptions
+                    </button>
+                    <button onclick="switchTab('drc20')" id="tab-drc20" 
+                            class="py-4 px-2 text-gray-600 hover:text-orange-600 transition-colors">
+                        DRC-20 Tokens
+                    </button>
+                    <button onclick="switchTab('dunes')" id="tab-dunes" 
+                            class="py-4 px-2 text-gray-600 hover:text-orange-600 transition-colors">
+                        Dunes
+                    </button>
+                    <button onclick="switchTab('lotto')" id="tab-lotto"
+                            class="py-4 px-2 text-gray-600 hover:text-orange-600 transition-colors">
+                        Lotto
+                    </button>
+                    <button onclick="switchTab('dogetags')" id="tab-dogetags"
+                            class="py-4 px-2 text-gray-600 hover:text-orange-600 transition-colors">
+                        Dogetags
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Content Area -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Total Inscriptions</div>
+                    <div id="stat-inscriptions" class="text-3xl font-bold text-gray-800 mt-2">-</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Latest Block</div>
+                    <div id="stat-block" class="text-3xl font-bold text-gray-800 mt-2">-</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Last Updated</div>
+                    <div id="stat-time" class="text-lg font-semibold text-gray-800 mt-2">-</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Auto Refresh</div>
+                    <div class="text-lg font-semibold text-green-600 mt-2">Every 5s</div>
+                </div>
+            </div>
+
+            <!-- Tab Content -->
+            <div id="content-inscriptions" class="tab-content">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Number</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Inscription ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Content Type</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inscriptions-table" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="content-drc20" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticker</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Max Supply</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Minted</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deployer</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                            </tr>
+                        </thead>
+                        <tbody id="drc20-table" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="content-dunes" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Spaced Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mints</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Burned</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dunes-table" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="content-lotto" class="tab-content hidden">
+                <div class="space-y-6">
+                    <div class="bg-white rounded-lg shadow overflow-hidden">
+                        <div class="px-6 py-4 bg-gray-50 border-b">
+                            <h3 class="text-lg font-semibold">Recent Tickets</h3>
+                        </div>
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lotto</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tip %</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lotto-tickets-table" class="bg-white divide-y divide-gray-200">
+                                <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow overflow-hidden">
+                        <div class="px-6 py-4 bg-gray-50 border-b">
+                            <h3 class="text-lg font-semibold">🎉 Winners</h3>
+                        </div>
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lotto</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Winner</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payout (DOGE)</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lotto-winners-table" class="bg-white divide-y divide-gray-200">
+                                <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dogetags Tab -->
+            <div id="content-dogetags" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <div class="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+                        <h3 class="text-lg font-semibold">🏷️ Dogetags — On-chain Graffiti</h3>
+                        <div class="flex gap-2">
+                            <input id="dogetag-search-input" type="text" placeholder="Search messages..."
+                                   class="border border-gray-300 rounded px-3 py-1 text-sm focus:outline-none focus:border-orange-400"
+                                   oninput="loadDogetags()">
+                        </div>
+                    </div>
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TxID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sender</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bytes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dogetags-table" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Inscription Decode Modal -->
+    <div id="decode-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-orange-500 to-yellow-400 text-white">
+                <h2 class="text-lg font-bold">Inscription Decode</h2>
+                <button onclick="closeDecodeModal()" class="text-white/80 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <div id="decode-modal-content" class="px-6 py-5 min-h-[120px]">
+                <div class="text-gray-400 text-center py-8">Enter an inscription ID above</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'inscriptions';
+        let notificationsArmed = false;
+        let lastSeenTicketId = null;
+        let lastSeenWinnerTicketId = null;
+        let lastSeenDnsInscriptionId = null;
+        let lastSeenDogemapInscriptionId = null;
+        let lastSeenDogetagId = null;
+
+        function showToast(message, kind = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const kindClass = kind === 'success' ? 'bg-green-600' : 'bg-orange-600';
+            toast.className = `${kindClass} text-white px-4 py-3 rounded-lg shadow-lg min-w-[280px] max-w-[420px]`;
+            toast.innerHTML = `
+                <div class="flex items-start justify-between gap-3">
+                    <div class="text-sm font-medium">${message}</div>
+                    <button class="text-white/80 hover:text-white" aria-label="Close">x</button>
+                </div>
+            `;
+
+            const closeButton = toast.querySelector('button');
+            closeButton.addEventListener('click', () => toast.remove());
+
+            container.prepend(toast);
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.remove();
+                }
+            }, 6000);
+        }
+
+        function maybeShowBrowserNotification(title, body) {
+            if (!('Notification' in window)) {
+                return;
+            }
+            if (Notification.permission === 'granted') {
+                new Notification(title, { body });
+            }
+        }
+
+        async function armBrowserNotifications() {
+            if (!('Notification' in window)) {
+                return;
+            }
+            if (Notification.permission === 'default') {
+                try {
+                    await Notification.requestPermission();
+                } catch (e) {
+                    console.warn('Notification permission request failed', e);
+                }
+            }
+        }
+
+        async function checkLiveLottoEvents() {
+            try {
+                const [ticketRes, winnerRes, dnsRes, dogemapRes] = await Promise.all([
+                    fetch('/api/lotto/tickets?limit=1'),
+                    fetch('/api/lotto/winners?limit=1'),
+                    fetch('/api/dns/names?limit=1'),
+                    fetch('/api/dogemap/claims?limit=1')
+                ]);
+
+                const latestTickets = await ticketRes.json();
+                const latestWinners = await winnerRes.json();
+                const latestDnsNames = await dnsRes.json();
+                const latestDogemapClaims = await dogemapRes.json();
+
+                const latestTicket = latestTickets[0];
+                const latestWinner = latestWinners[0];
+                const latestDns = latestDnsNames[0];
+                const latestDogemap = latestDogemapClaims[0];
+
+                if (latestTicket && notificationsArmed && lastSeenTicketId && latestTicket.ticket_id !== lastSeenTicketId) {
+                    const msg = `New lotto mint: ${latestTicket.lotto_name} by ${latestTicket.player_address.slice(0, 10)}...`;
+                    showToast(msg, 'info');
+                    maybeShowBrowserNotification('New Doge-Lotto Ticket', msg);
+                }
+
+                if (latestWinner && notificationsArmed && lastSeenWinnerTicketId && latestWinner.ticket_id !== lastSeenWinnerTicketId) {
+                    const payout = ((latestWinner.gross_payout_koinu - latestWinner.tip_deduction_koinu) / 100000000).toFixed(2);
+                    const msg = `Winner detected: ${latestWinner.lotto_name} paid ${payout} DOGE`;
+                    showToast(msg, 'success');
+                    maybeShowBrowserNotification('Doge-Lotto Winner', msg);
+                }
+
+                if (latestDns && notificationsArmed && lastSeenDnsInscriptionId && latestDns.inscription_id !== lastSeenDnsInscriptionId) {
+                    const msg = `New DNS claim: ${latestDns.name}`;
+                    showToast(msg, 'info');
+                    maybeShowBrowserNotification('New DNS Registration', msg);
+                }
+
+                if (latestDogemap && notificationsArmed && lastSeenDogemapInscriptionId && latestDogemap.inscription_id !== lastSeenDogemapInscriptionId) {
+                    const msg = `New Dogemap claim: block ${latestDogemap.block_number}`;
+                    showToast(msg, 'info');
+                    maybeShowBrowserNotification('New Dogemap Claim', msg);
+                }
+
+                if (latestTicket) {
+                    lastSeenTicketId = latestTicket.ticket_id;
+                }
+                if (latestWinner) {
+                    lastSeenWinnerTicketId = latestWinner.ticket_id;
+                }
+                if (latestDns) {
+                    lastSeenDnsInscriptionId = latestDns.inscription_id;
+                }
+                if (latestDogemap) {
+                    lastSeenDogemapInscriptionId = latestDogemap.inscription_id;
+                }
+
+                if (!notificationsArmed) {
+                    notificationsArmed = true;
+                }
+            } catch (e) {
+                console.warn('Live lotto event check failed', e);
+            }
+        }
+
+        function switchTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.classList.remove('tab-active', 'text-orange-600', 'font-semibold', 'border-b-2', 'border-orange-500');
+                btn.classList.add('text-gray-600');
+            });
+            document.getElementById(`tab-${tab}`).classList.add('tab-active');
+            document.getElementById(`tab-${tab}`).classList.remove('text-gray-600');
+
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+
+            currentTab = tab;
+            loadTabData(tab);
+        }
+
+        async function loadStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                document.getElementById('stat-inscriptions').textContent = 
+                    data.total_inscriptions?.toLocaleString() || '0';
+                document.getElementById('stat-block').textContent = 
+                    data.latest_indexed_block?.toLocaleString() || '-';
+                
+                if (data.latest_block_timestamp) {
+                    const date = new Date(data.latest_block_timestamp * 1000);
+                    document.getElementById('stat-time').textContent = date.toLocaleTimeString();
+                }
+                
+                document.getElementById('status-info').textContent = 
+                    `${data.total_inscriptions?.toLocaleString() || 0} inscriptions`;
+            } catch (e) {
+                console.error('Failed to load status:', e);
+            }
+        }
+
+        async function loadTabData(tab) {
+            switch(tab) {
+                case 'inscriptions':
+                    await loadInscriptions();
+                    break;
+                case 'drc20':
+                    await loadDrc20();
+                    break;
+                case 'dunes':
+                    await loadDunes();
+                    break;
+                case 'lotto':
+                    await loadLotto();
+                    break;
+                case 'dogetags':
+                    await loadDogetags();
+                    break;
+            }
+        }
+
+        async function loadDogetags() {
+            const query = document.getElementById('dogetag-search-input')?.value?.trim() || '';
+            const url = query
+                ? `/api/dogetags?limit=50`
+                : `/api/dogetags?limit=50`;
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                const tbody = document.getElementById('dogetags-table');
+                if (!Array.isArray(data) || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No dogetags indexed yet</td></tr>';
+                    return;
+                }
+
+                const filtered = query
+                    ? data.filter(t => t.message.toLowerCase().includes(query.toLowerCase()))
+                    : data;
+
+                if (filtered.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No tags matching "${query}"</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = filtered.map(tag => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${tag.block_height.toLocaleString()}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            <a href="https://dogechain.info/tx/${tag.txid}" target="_blank"
+                               class="text-orange-500 hover:underline">${tag.txid.substring(0,16)}…</a>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            ${tag.sender_address
+                                ? `<span title="${tag.sender_address}">${tag.sender_address.substring(0,16)}…</span>`
+                                : '<span class="text-gray-400">unknown</span>'}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-800 max-w-xs break-words">
+                            ${tag.message.replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                            ${tag.message_bytes}B
+                        </td>
+                    </tr>
+                `).join('');
+
+                if (!lastSeenDogetagId && filtered[0]) {
+                    lastSeenDogetagId = filtered[0].id;
+                } else if (filtered[0] && filtered[0].id !== lastSeenDogetagId && notificationsArmed) {
+                    showToast(`New Dogetag: "${filtered[0].message.substring(0,40)}"`, 'info');
+                    lastSeenDogetagId = filtered[0].id;
+                }
+            } catch (e) {
+                console.error('Failed to load dogetags:', e);
+                document.getElementById('dogetags-table').innerHTML =
+                    '<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error loading data</td></tr>';
+            }
+        }
+
+        async function loadInscriptions() {
+            try {
+                const res = await fetch('/api/inscriptions/recent');
+                const data = await res.json();
+                
+                const tbody = document.getElementById('inscriptions-table');
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No inscriptions yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(item => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            #${item.inscription_number.toLocaleString()}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            ${item.inscription_id.substring(0, 20)}...
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.content_type || 'unknown'}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.content_length ? (item.content_length / 1024).toFixed(1) + ' KB' : '-'}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.block_height.toLocaleString()}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load inscriptions:', e);
+                document.getElementById('inscriptions-table').innerHTML = 
+                    '<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error loading data</td></tr>';
+            }
+        }
+
+        async function loadDrc20() {
+            try {
+                const res = await fetch('/api/drc20/tokens?limit=50');
+                const data = await res.json();
+                
+                const tbody = document.getElementById('drc20-table');
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No DRC-20 tokens yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(item => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-600">
+                            ${item.tick}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.max_supply}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.minted}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 font-mono">
+                            ${item.deployer.substring(0, 15)}...
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.block_height.toLocaleString()}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load DRC-20:', e);
+                document.getElementById('drc20-table').innerHTML = 
+                    '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">DRC-20 indexing not enabled</td></tr>';
+            }
+        }
+
+        async function loadDunes() {
+            try {
+                const res = await fetch('/api/dunes/tokens?limit=50');
+                const data = await res.json();
+                
+                const tbody = document.getElementById('dunes-table');
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No Dunes tokens yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(item => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-600">
+                            ${item.name}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.spaced_name}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.mints.toLocaleString()}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.burned}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.block.toLocaleString()}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load Dunes:', e);
+                document.getElementById('dunes-table').innerHTML = 
+                    '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Dunes indexing not enabled</td></tr>';
+            }
+        }
+
+        async function loadLotto() {
+            try {
+                const [ticketsRes, winnersRes] = await Promise.all([
+                    fetch('/api/lotto/tickets?limit=20'),
+                    fetch('/api/lotto/winners?limit=20')
+                ]);
+                const tickets = await ticketsRes.json();
+                const winners = await winnersRes.json();
+                
+                const ticketsTbody = document.getElementById('lotto-tickets-table');
+                if (tickets.length === 0) {
+                    ticketsTbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No lotto tickets yet</td></tr>';
+                } else {
+                    ticketsTbody.innerHTML = tickets.map(item => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 text-sm font-mono text-gray-900">
+                                ${item.ticket_id.substring(0, 16)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-orange-600">
+                                ${item.lotto_name}
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500 font-mono">
+                                ${item.player_address.substring(0, 15)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm ${item.tip_percent > 0 ? 'text-green-600 font-semibold' : 'text-gray-400'}">
+                                ${item.tip_percent}%
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${item.block_height.toLocaleString()}
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+
+                const winnersTbody = document.getElementById('lotto-winners-table');
+                if (winners.length === 0) {
+                    winnersTbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No winners yet</td></tr>';
+                } else {
+                    winnersTbody.innerHTML = winners.map(item => {
+                        const netPayout = (item.gross_payout_koinu - item.tip_deduction_koinu) / 100000000;
+                        return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 text-sm font-mono text-gray-900">
+                                ${item.ticket_id.substring(0, 16)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-orange-600">
+                                ${item.lotto_name}
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500 font-mono">
+                                ${item.player_address.substring(0, 15)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600">
+                                ${netPayout.toFixed(2)} Ð
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${item.draw_block.toLocaleString()}
+                            </td>
+                        </tr>
+                    `}).join('');
+                }
+            } catch (e) {
+                console.error('Failed to load lotto data:', e);
+            }
+        }
+
+        // ---------------------------------------------------------------------------
+        // Inscription decoder
+        // ---------------------------------------------------------------------------
+
+        async function searchInscription(event) {
+            event.preventDefault();
+            const raw = document.getElementById('inscription-search').value.trim();
+            if (!raw) return;
+            openDecodeModal(raw);
+        }
+
+        async function openDecodeModal(inscriptionId) {
+            const modal = document.getElementById('decode-modal');
+            const content = document.getElementById('decode-modal-content');
+            modal.classList.remove('hidden');
+            content.innerHTML = '<div class="text-gray-500 text-center py-8">Fetching from Dogecoin Core…</div>';
+
+            try {
+                const url = `/api/decode?inscription_id=${encodeURIComponent(inscriptionId)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!data.found) {
+                    content.innerHTML = `
+                        <div class="text-red-500 text-center py-8">
+                            <div class="text-2xl mb-2">Not found</div>
+                            <div class="text-sm text-gray-500">${data.error || 'No inscriptions in this transaction'}</div>
+                        </div>`;
+                    return;
+                }
+
+                const ct = data.content_type || 'unknown';
+                const size = data.content_length ? (data.content_length / 1024).toFixed(2) + ' KB' : '-';
+                const isImage = ct.startsWith('image/');
+                const isText = ct.startsWith('text/') || ct === 'application/json';
+
+                let bodyHtml = '';
+                if (isImage) {
+                    bodyHtml = `
+                        <div class="mt-4 flex justify-center">
+                            <img src="${data.content_url}" alt="${ct}"
+                                 class="max-h-96 max-w-full rounded-lg shadow-lg border border-gray-200"
+                                 onerror="this.outerHTML='<div class=\\'text-red-400 text-sm\\'>Image failed to load</div>'">
+                        </div>`;
+                } else if (isText && data.body_text) {
+                    const escaped = data.body_text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                    bodyHtml = `
+                        <div class="mt-4">
+                            <div class="text-xs text-gray-400 mb-1">Content</div>
+                            <pre class="bg-gray-50 border border-gray-200 rounded p-3 text-xs overflow-auto max-h-64 whitespace-pre-wrap break-all">${escaped}</pre>
+                        </div>`;
+                } else {
+                    bodyHtml = `<div class="mt-4 text-gray-400 text-sm">Binary content — <a href="${data.content_url}" target="_blank" class="text-orange-500 hover:underline">download raw</a></div>`;
+                }
+
+                content.innerHTML = `
+                    <div>
+                        <div class="grid grid-cols-2 gap-3 text-sm mb-2">
+                            <div>
+                                <div class="text-xs text-gray-400">Inscription ID</div>
+                                <div class="font-mono text-xs break-all text-gray-800">${data.inscription_id}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-400">Content Type</div>
+                                <div class="font-semibold text-gray-800">${ct}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-400">Size</div>
+                                <div class="text-gray-800">${size}</div>
+                            </div>
+                            ${data.metaprotocol ? `<div>
+                                <div class="text-xs text-gray-400">Metaprotocol</div>
+                                <div class="text-gray-800">${data.metaprotocol}</div>
+                            </div>` : ''}
+                        </div>
+                        ${bodyHtml}
+                    </div>`;
+            } catch (e) {
+                content.innerHTML = `<div class="text-red-500 text-center py-8">Error: ${e.message}</div>`;
+            }
+        }
+
+        function closeDecodeModal() {
+            document.getElementById('decode-modal').classList.add('hidden');
+        }
+
+        // Close modal on backdrop click
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('decode-modal').addEventListener('click', function(e) {
+                if (e.target === this) closeDecodeModal();
+            });
+        });
+
+        // Expose showToast globally so wallet.js can use it
+        window.showToast = showToast;
+
+        // Initial load
+        loadStatus();
+        loadInscriptions();
+        armBrowserNotifications();
+        checkLiveLottoEvents();
+
+        // Auto-refresh every 5 seconds
+        setInterval(() => {
+            loadStatus();
+            loadTabData(currentTab);
+            checkLiveLottoEvents();
+        }, 5000);
+    </script>
+    <script src="/wallet.js"></script>
+</body>
+</html>

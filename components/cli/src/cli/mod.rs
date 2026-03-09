@@ -20,8 +20,8 @@ use dogecoin::bitcoincore_rpc::{
 };
 use clap::Parser;
 use commands::{
-    Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand, DogetagCommand,
-    DogetagSendCommand, IndexCommand, LottoCommand, Protocol, ServiceCommand,
+    Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand,
+    DogetagCommand, DogetagSendCommand, IndexCommand, LottoCommand, Protocol, ServiceCommand,
 };
 use config::{generator::generate_toml_config, Config};
 use hiro_system_kit;
@@ -102,46 +102,55 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
             Command::Service(subcmd) => match subcmd {
                 ServiceCommand::Start(cmd) => {
                     check_maintenance_mode(ctx);
-                    let config = Config::from_file_path(&cmd.config_path)?;
+                    let mut config = Config::from_file_path(&cmd.config_path)?;
                     config.assert_doginals_config()?;
                     
                     // Start web explorer if enabled
-                    if let Some(web_config) = &config.web {
-                        if web_config.enabled {
-                            let doginals_config = config.doginals.as_ref().unwrap();
-                            let doginals_pool = Arc::new(pg_pool(&doginals_config.db)
-                                .map_err(|e| format!("Failed to create doginals pool: {}", e))?);
-                            
-                            let drc20_pool = config.ordinals_drc20_config()
-                                .map(|drc20| pg_pool(&drc20.db))
-                                .transpose()
-                                .map_err(|e| format!("Failed to create DRCC-20 pool: {}", e))?
-                                .map(Arc::new);
-                            
-                            let dunes_pool = config.dunes.as_ref()
-                                .map(|dunes| pg_pool(&dunes.db))
-                                .transpose()
-                                .map_err(|e| format!("Failed to create Dunes pool: {}", e))?
-                                .map(Arc::new);
-                            
-                            let web_addr = format!("0.0.0.0:{}", web_config.port).parse()
-                                .map_err(|e| format!("Invalid web server address: {}", e))?;
-                            let burn_address = config.protocols.lotto.burn_address.clone();
+                    let web_enabled = config.web.as_ref().map(|w| w.enabled).unwrap_or(false);
+                    let web_port    = config.web.as_ref().map(|w| w.port).unwrap_or(8080);
+                    if web_enabled {
+                        let doginals_config = config.doginals.as_ref().unwrap();
+                        let doginals_pool = Arc::new(pg_pool(&doginals_config.db)
+                            .map_err(|e| format!("Failed to create doginals pool: {}", e))?);
 
-                            tokio::spawn(async move {
-                                if let Err(e) = crate::web::start_web_server(
-                                    web_addr,
-                                    doginals_pool,
-                                    drc20_pool,
-                                    dunes_pool,
-                                    burn_address,
-                                ).await {
-                                    eprintln!("Web server error: {}", e);
-                                }
-                            });
+                        let drc20_pool = config.ordinals_drc20_config()
+                            .map(|drc20| pg_pool(&drc20.db))
+                            .transpose()
+                            .map_err(|e| format!("Failed to create DRCC-20 pool: {}", e))?
+                            .map(Arc::new);
+
+                        let dunes_pool = config.dunes.as_ref()
+                            .map(|dunes| pg_pool(&dunes.db))
+                            .transpose()
+                            .map_err(|e| format!("Failed to create Dunes pool: {}", e))?
+                            .map(Arc::new);
+
+                        let web_addr = format!("0.0.0.0:{}", web_port).parse()
+                            .map_err(|e| format!("Invalid web server address: {}", e))?;
+                        let burn_address = config.protocols.lotto.burn_address.clone();
+
+                        // Auto-register the local webhook URL so every indexed event is
+                        // fanned out to /api/events SSE subscribers (e.g. dogecoin.games).
+                        let local_webhook = format!("http://127.0.0.1:{}/api/webhook", web_port);
+                        if !config.webhooks.urls.contains(&local_webhook) {
+                            config.webhooks.urls.push(local_webhook);
                         }
+
+                        let dogecoin_config = config.dogecoin.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = crate::web::start_web_server(
+                                web_addr,
+                                doginals_pool,
+                                drc20_pool,
+                                dunes_pool,
+                                burn_address,
+                                dogecoin_config,
+                            ).await {
+                                eprintln!("Web server error: {}", e);
+                            }
+                        });
                     }
-                    
+
                     doginals_indexer::start_doginals_indexer(true, &abort_signal, &config, ctx).await?
                 }
             },
@@ -960,6 +969,122 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                                 println!("  Block #{}: {}", t.block_height, t.message);
                             }
                             println!("\n{} tag(s) found.", tags.len());
+                        }
+                    }
+                }
+            }
+        }
+        Protocol::Decode(cmd) => {
+            let config = Config::from_file_path(&cmd.config_path)?;
+            let txid_str = if let Some(iid) = &cmd.inscription_id {
+                // Strip the 'i<N>' suffix: "abc123i0" -> "abc123"
+                match iid.rfind('i') {
+                    Some(pos) => iid[..pos].to_string(),
+                    None => iid.clone(),
+                }
+            } else if let Some(t) = &cmd.txid {
+                t.clone()
+            } else {
+                return Err("Provide --inscription-id or --txid".to_string());
+            };
+
+            let txid: Txid = txid_str
+                .parse()
+                .map_err(|e| format!("Invalid txid '{}': {}", txid_str, e))?;
+
+            let ctx_rpc = Context::empty();
+            let rpc = dogecoin::utils::bitcoind::dogecoin_get_client(&config.dogecoin, &ctx_rpc);
+            let raw_hex = rpc
+                .get_raw_transaction_hex(&txid, None)
+                .map_err(|e| format!("getrawtransaction {}: {}", txid_str, e))?;
+            let raw_bytes = hex::decode(&raw_hex)
+                .map_err(|e| format!("hex decode error: {}", e))?;
+            let doge_tx: ::bitcoin::Transaction = ::bitcoin::consensus::deserialize(&raw_bytes)
+                .map_err(|e| format!("tx deserialize error: {}", e))?;
+
+            let envelopes = doginals::envelope::ParsedEnvelope::from_transactions_dogecoin(&[doge_tx]);
+
+            if envelopes.is_empty() {
+                if cmd.json {
+                    println!("[]");
+                } else {
+                    println!("No inscriptions found in transaction {}", txid_str);
+                }
+                return Ok(());
+            }
+
+            if cmd.json {
+                let out: Vec<_> = envelopes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, env)| {
+                        let insc = &env.payload;
+                        let content_type = insc
+                            .content_type
+                            .as_ref()
+                            .and_then(|ct| std::str::from_utf8(ct).ok())
+                            .map(str::to_string);
+                        let metaprotocol = insc
+                            .metaprotocol
+                            .as_ref()
+                            .and_then(|mp| std::str::from_utf8(mp).ok())
+                            .map(str::to_string);
+                        let body_text = insc.body.as_ref().and_then(|b| {
+                            let ct = content_type.as_deref().unwrap_or("");
+                            if ct.starts_with("text/") || ct == "application/json" {
+                                std::str::from_utf8(b).ok().map(str::to_string)
+                            } else {
+                                None
+                            }
+                        });
+                        let body_hex = if cmd.hex {
+                            insc.body.as_ref().map(hex::encode)
+                        } else {
+                            None
+                        };
+                        serde_json::json!({
+                            "inscription_id": format!("{}i{}", txid_str, i),
+                            "content_type": content_type,
+                            "content_length": insc.body.as_ref().map(|b| b.len()),
+                            "metaprotocol": metaprotocol,
+                            "body_text": body_text,
+                            "body_hex": body_hex,
+                            "input": env.input,
+                            "offset": env.offset,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            } else {
+                for (i, env) in envelopes.iter().enumerate() {
+                    let insc = &env.payload;
+                    let content_type = insc
+                        .content_type
+                        .as_ref()
+                        .and_then(|ct| std::str::from_utf8(ct).ok())
+                        .unwrap_or("unknown");
+                    let body_len = insc.body.as_ref().map(|b| b.len()).unwrap_or(0);
+                    println!("Inscription #{i}:");
+                    println!("  inscription_id:  {}i{}", txid_str, i);
+                    println!("  content_type:    {content_type}");
+                    println!("  content_length:  {body_len} bytes");
+                    if let Some(mp) = insc
+                        .metaprotocol
+                        .as_ref()
+                        .and_then(|mp| std::str::from_utf8(mp).ok())
+                    {
+                        println!("  metaprotocol:    {mp}");
+                    }
+                    if let Some(body) = &insc.body {
+                        let ct = content_type;
+                        if ct.starts_with("text/") || ct == "application/json" {
+                            if let Ok(s) = std::str::from_utf8(body) {
+                                let preview: String = s.chars().take(300).collect();
+                                println!("  body_preview:    {preview}");
+                            }
+                        }
+                        if cmd.hex {
+                            println!("  body_hex:        {}", hex::encode(body));
                         }
                     }
                 }

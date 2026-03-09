@@ -16,6 +16,15 @@ pub const DEFAULT_MAIN_PICK: u16 = 69;
 pub const GLOBAL_NUMBER_MIN: u16 = 1;
 pub const GLOBAL_NUMBER_MAX: u16 = 420;
 
+// closest_fingerprint constants
+pub const CLASSIC_PICK: u16 = 6;
+pub const CLASSIC_MAX: u16 = 49;
+/// Payout tiers in basis points for closest_fingerprint mode:
+/// rank 1 = 55%, rank 2 = 20%, rank 3 = 10%, ranks 4-10 pool = 5%.
+/// Remaining 10% rolls over (FINGERPRINT_ROLLOVER_BPS).
+pub const FINGERPRINT_TIER_BPS: [u32; 4] = [5_500, 2_000, 1_000, 500];
+pub const FINGERPRINT_ROLLOVER_BPS: u32 = 1_000;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NumberConfig {
     pub pick: u16,
@@ -54,6 +63,9 @@ pub enum LottoTemplate {
     LifeAnnuity,
     #[serde(rename = "custom")]
     Custom,
+    /// SHA256-fingerprint distance ranking (doge-69-420, doge-4-20-flash, doge-max).
+    #[serde(rename = "closest_fingerprint")]
+    ClosestFingerprint,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +74,10 @@ pub enum ResolutionMode {
     AlwaysWinner,
     ClosestWins,
     ExactOnlyWithRollover,
+    /// Rank tickets by |SHA256(sorted seed u16 pairs) − block_hash_u256|.
+    /// Ties at the same distance split that tier equally.
+    /// Secondary display sort: inscription_id lexicographic (lex-smaller first).
+    ClosestFingerprint,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,6 +303,93 @@ pub fn derive_numbers_for_config(
     result
 }
 
+/// SHA256 of seed_numbers sorted as big-endian u16 pairs → 32-byte fingerprint (u256).
+pub fn compute_ticket_fingerprint(seed_numbers: &[u16]) -> [u8; 32] {
+    use bitcoin::hashes::{sha256, Hash, HashEngine};
+
+    let mut sorted = seed_numbers.to_vec();
+    sorted.sort_unstable();
+
+    let mut engine = sha256::HashEngine::default();
+    for n in &sorted {
+        engine.input(&n.to_be_bytes());
+    }
+    *sha256::Hash::from_engine(engine).as_byte_array()
+}
+
+/// Unsigned 256-bit absolute difference: |a − b| with big-endian [u8; 32].
+pub fn u256_abs_diff(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    // Determine which is larger
+    if a >= b {
+        u256_sub(a, b)
+    } else {
+        u256_sub(b, a)
+    }
+}
+
+fn u256_sub(larger: &[u8; 32], smaller: &[u8; 32]) -> [u8; 32] {
+    let mut result = [0u8; 32];
+    let mut borrow: u16 = 0;
+    for i in (0..32).rev() {
+        let diff = larger[i] as i16 - smaller[i] as i16 - borrow as i16;
+        if diff < 0 {
+            result[i] = (diff + 256) as u8;
+            borrow = 1;
+        } else {
+            result[i] = diff as u8;
+            borrow = 0;
+        }
+    }
+    result
+}
+
+/// Derive 6 classic numbers (1-49) deterministically from a ticket fingerprint.
+pub fn derive_classic_numbers(fingerprint: &[u8; 32]) -> Vec<u16> {
+    let hex = hex::encode(fingerprint);
+    derive_numbers_for_config(
+        &hex,
+        &NumberConfig {
+            pick: CLASSIC_PICK,
+            max: CLASSIC_MAX,
+        },
+        "classic",
+    )
+}
+
+/// Derive 6 classic numbers drawn at resolution from the draw block hash.
+pub fn derive_classic_drawn_numbers(block_hash: &str) -> Vec<u16> {
+    derive_numbers_for_config(
+        block_hash,
+        &NumberConfig {
+            pick: CLASSIC_PICK,
+            max: CLASSIC_MAX,
+        },
+        "classic",
+    )
+}
+
+/// Count how many ticket classic numbers appear in the drawn classic numbers.
+pub fn count_classic_matches(ticket_classic: &[u16], drawn_classic: &[u16]) -> usize {
+    let drawn_set: HashSet<u16> = drawn_classic.iter().copied().collect();
+    ticket_classic
+        .iter()
+        .filter(|n| drawn_set.contains(n))
+        .count()
+}
+
+/// Fixed classic-tier prize multiplier in koinu per match count (0 if below threshold).
+/// Returns a basis-points fraction of the dedicated classic pool (handled by caller).
+/// 3 matches → 1_000 bps, 4 → 2_000 bps, 5 → 4_000 bps, 6 → 10_000 bps.
+pub fn classic_prize_bps(matches: usize) -> u32 {
+    match matches {
+        3 => 1_000,
+        4 => 2_000,
+        5 => 4_000,
+        6 => 10_000,
+        _ => 0,
+    }
+}
+
 pub fn score_ticket(seed_numbers: &[u16], drawn: &[u16]) -> u64 {
     drawn
         .iter()
@@ -423,6 +526,10 @@ fn template_matches_config(
         }
         LottoTemplate::LifeAnnuity => guaranteed_min_prize_koinu.is_some(),
         LottoTemplate::Custom => true,
+        LottoTemplate::ClosestFingerprint => {
+            bonus_numbers.is_disabled()
+                && matches!(resolution_mode, ResolutionMode::ClosestFingerprint)
+        }
     }
 }
 

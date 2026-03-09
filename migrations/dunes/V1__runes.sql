@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS runes (
+CREATE TABLE IF NOT EXISTS dunes (
     id                      TEXT NOT NULL PRIMARY KEY,
     number                  BIGINT NOT NULL UNIQUE,
     name                    TEXT NOT NULL UNIQUE,
@@ -21,10 +21,10 @@ CREATE TABLE IF NOT EXISTS runes (
     timestamp               BIGINT NOT NULL
 );
 
-CREATE INDEX runes_block_height_tx_index_index ON runes (block_height DESC, tx_index DESC);
+CREATE INDEX dunes_block_height_tx_index_index ON dunes (block_height DESC, tx_index DESC);
 
 -- Insert default 'UNCOMMON•GOODS'
-INSERT INTO runes (
+INSERT INTO dunes (
     id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, symbol, terms_amount,
     terms_cap, terms_height_start, terms_height_end, timestamp
 )

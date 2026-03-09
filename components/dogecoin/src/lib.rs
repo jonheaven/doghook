@@ -33,6 +33,7 @@ use crate::{
 
 pub mod block_pool;
 pub mod chainparams;
+pub mod network_params;
 pub mod pipeline;
 pub mod types;
 pub mod utils;

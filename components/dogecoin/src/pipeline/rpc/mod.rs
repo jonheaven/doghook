@@ -416,80 +416,118 @@ pub(crate) fn standardize_dogecoin_block(
                 None => {
                     // Dogecoin nodes can omit `prevout` in getblock verbosity=3.
                     // Fallback to parent tx lookup for value + parent block height.
-                    let bitcoin_rpc = dogecoin_get_client(dogecoin_config, ctx);
-                    let parent_tx_value = bitcoin_rpc
-                        .call::<serde_json::Value>(
+                    // Retry up to 4 times with a fresh RPC client each attempt to
+                    // handle transient transport errors (os error 10053) caused by
+                    // Dogecoin Core dropping connections under concurrent load.
+                    const MAX_PREVOUT_RETRIES: u32 = 4;
+                    let mut last_err = String::new();
+                    let mut prevout_result: Option<BitcoinTransactionInputPrevoutFullBreakdown> = None;
+
+                    for attempt in 0..MAX_PREVOUT_RETRIES {
+                        if attempt > 0 {
+                            try_debug!(
+                                ctx,
+                                "retrying prevout RPC for tx {} input #{} (attempt {}/{}): {}",
+                                tx.txid, index, attempt, MAX_PREVOUT_RETRIES, last_err
+                            );
+                            std::thread::sleep(std::time::Duration::from_millis(500 * attempt as u64));
+                        }
+
+                        // Fresh client each attempt — avoids reusing a half-closed TCP connection.
+                        let bitcoin_rpc = dogecoin_get_client(dogecoin_config, ctx);
+
+                        let parent_tx_value = match bitcoin_rpc.call::<serde_json::Value>(
                             "getrawtransaction",
                             &[json!(input_txid), json!(true)],
-                        )
-                        .map_err(|e| {
-                            (
+                        ) {
+                            Ok(v) => v,
+                            Err(e) => { last_err = format!("getrawtransaction {input_txid}: {e}"); continue; }
+                        };
+
+                        let parent_tx: RpcTransactionValueBreakdown = match serde_json::from_value(parent_tx_value) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                last_err = format!("decode parent tx {input_txid}: {e}");
+                                continue;
+                            }
+                        };
+
+                        let value = match parent_tx.vout.iter().find(|o| o.n == vout).map(|o| o.value) {
+                            Some(v) => v,
+                            None => {
+                                // Non-transient error — fail immediately.
+                                return Err((
+                                    format!(
+                                        "missing parent vout {} in tx {} for tx {}, input #{} (block #{})",
+                                        vout, input_txid, tx.txid, index, block.height
+                                    ),
+                                    true,
+                                ));
+                            }
+                        };
+
+                        let blockhash_str = match parent_tx.blockhash {
+                            Some(h) => h,
+                            None => {
+                                return Err((
+                                    format!(
+                                        "missing parent blockhash for tx {} (tx {}, input #{} block #{})",
+                                        input_txid, tx.txid, index, block.height
+                                    ),
+                                    true,
+                                ));
+                            }
+                        };
+
+                        let blockhash = match BlockHash::from_str(&blockhash_str) {
+                            Ok(h) => h,
+                            Err(e) => {
+                                return Err((
+                                    format!("invalid parent blockhash {} for tx {}: {}", blockhash_str, input_txid, e),
+                                    true,
+                                ));
+                            }
+                        };
+
+                        // Dogecoin Core's getblockheader response omits `nTx`, so we
+                        // cannot use get_block_header_info() (which requires it).
+                        // Use a raw call and extract only the height field.
+                        let height_val = match bitcoin_rpc.call::<serde_json::Value>(
+                            "getblockheader",
+                            &[json!(blockhash.to_string()), json!(true)],
+                        ) {
+                            Ok(v) => v,
+                            Err(e) => { last_err = format!("getblockheader {blockhash}: {e}"); continue; }
+                        };
+
+                        let parent_height = match height_val["height"].as_u64() {
+                            Some(h) => h,
+                            None => {
+                                return Err((
+                                    format!("missing height in block header {} for tx {}", blockhash, input_txid),
+                                    true,
+                                ));
+                            }
+                        };
+
+                        prevout_result = Some(BitcoinTransactionInputPrevoutFullBreakdown {
+                            height: parent_height,
+                            value,
+                        });
+                        break;
+                    }
+
+                    match prevout_result {
+                        Some(p) => p,
+                        None => {
+                            return Err((
                                 format!(
-                                    "error retrieving parent tx {} for tx {}, input #{} (block #{}): {}",
-                                    input_txid, tx.txid, index, block.height, e
+                                    "failed to fetch prevout for tx {}, input #{} (block #{}) after {} attempts: {}",
+                                    tx.txid, index, block.height, MAX_PREVOUT_RETRIES, last_err
                                 ),
                                 true,
-                            )
-                        })?;
-
-                    let parent_tx: RpcTransactionValueBreakdown = serde_json::from_value(parent_tx_value)
-                        .map_err(|e| {
-                            (
-                                format!(
-                                    "unable to decode parent tx {} for tx {}, input #{} (block #{}): {}",
-                                    input_txid, tx.txid, index, block.height, e
-                                ),
-                                true,
-                            )
-                        })?;
-
-                    let value = parent_tx
-                        .vout
-                        .iter()
-                        .find(|o| o.n == vout)
-                        .map(|o| o.value)
-                        .ok_or((
-                            format!(
-                                "missing parent vout {} in tx {} for tx {}, input #{} (block #{})",
-                                vout, input_txid, tx.txid, index, block.height
-                            ),
-                            true,
-                        ))?;
-
-                    let blockhash_str = parent_tx.blockhash.ok_or((
-                        format!(
-                            "missing parent blockhash for tx {} (tx {}, input #{} block #{})",
-                            input_txid, tx.txid, index, block.height
-                        ),
-                        true,
-                    ))?;
-
-                    let blockhash = BlockHash::from_str(&blockhash_str).map_err(|e| {
-                        (
-                            format!(
-                                "invalid parent blockhash {} for tx {}: {}",
-                                blockhash_str, input_txid, e
-                            ),
-                            true,
-                        )
-                    })?;
-
-                    let parent_height = bitcoin_rpc
-                        .get_block_header_info(&blockhash)
-                        .map_err(|e| {
-                            (
-                                format!(
-                                    "error retrieving parent block header {} for tx {}: {}",
-                                    blockhash, input_txid, e
-                                ),
-                                true,
-                            )
-                        })?
-                        .height as u64;
-
-                    BitcoinTransactionInputPrevoutFullBreakdown {
-                        height: parent_height,
-                        value,
+                            ));
+                        }
                     }
                 }
             };

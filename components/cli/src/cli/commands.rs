@@ -25,6 +25,9 @@ pub enum Protocol {
     /// Configuration file commands
     #[clap(subcommand)]
     Config(ConfigCommand),
+    /// Decode and inspect an inscription directly from a transaction (no index needed)
+    #[clap(name = "decode")]
+    Decode(DecodeCommand),
 }
 
 // ---------------------------------------------------------------------------
@@ -413,6 +416,28 @@ pub struct SyncIndexCommand {
 pub struct RollbackIndexCommand {
     /// Number of blocks to rollback from index tip
     pub blocks: u32,
+    #[clap(long = "config-path")]
+    pub config_path: String,
+}
+
+// ---------------------------------------------------------------------------
+// Decode subcommand
+// ---------------------------------------------------------------------------
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+pub struct DecodeCommand {
+    /// Inscription ID to decode (e.g. <txid>i0). The 'i<N>' suffix is stripped automatically.
+    #[clap(long, conflicts_with = "txid")]
+    pub inscription_id: Option<String>,
+    /// Raw transaction ID to decode
+    #[clap(long, conflicts_with = "inscription_id")]
+    pub txid: Option<String>,
+    /// Also print the raw body as hex
+    #[clap(long)]
+    pub hex: bool,
+    /// Output as JSON
+    #[clap(long)]
+    pub json: bool,
     #[clap(long = "config-path")]
     pub config_path: String,
 }

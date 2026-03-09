@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doghook Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-active { @apply border-b-2 border-orange-500 text-orange-600 font-semibold; }
+        .status-dot { @apply h-3 w-3 rounded-full; }
+        .status-running { @apply bg-green-500 animate-pulse; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-orange-500 to-yellow-400 text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold">🐕 Doghook Explorer</h1>
+                        <p class="text-orange-100 mt-1">Real-time Dogecoin inscription indexer</p>
+                    </div>
+                    <div class="flex items-center space-x-3 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
+                        <span class="status-dot status-running"></span>
+                        <div class="text-sm">
+                            <div class="font-semibold">Indexing</div>
+                            <div id="status-info" class="text-xs text-orange-100">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+            <div class="container mx-auto px-4">
+                <div class="flex space-x-8">
+                    <button onclick="switchTab('inscriptions')" id="tab-inscriptions" 
+                            class="py-4 px-2 tab-active transition-colors">
+                        Latest Inscriptions
+                    </button>
+                    <button onclick="switchTab('drc20')" id="tab-drc20" 
+                            class="py-4 px-2 text-gray-600 hover:text-orange-600 transition-colors">
+                        DRC-20 Tokens
+                    </button>
+                    <button onclick="switchTab('dunes')" id="tab-dunes" 
+                            class="py-4 px-2 text-gray-600 hover:text-orange-600 transition-colors">
+                        Dunes
+                    </button>
+                    <button onclick="switchTab('lotto')" id="tab-lotto" 
+                            class="py-4 px-2 text-gray-600 hover:text-orange-600 transition-colors">
+                        Lotto
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Content Area -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Total Inscriptions</div>
+                    <div id="stat-inscriptions" class="text-3xl font-bold text-gray-800 mt-2">-</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Latest Block</div>
+                    <div id="stat-block" class="text-3xl font-bold text-gray-800 mt-2">-</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Last Updated</div>
+                    <div id="stat-time" class="text-lg font-semibold text-gray-800 mt-2">-</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="text-gray-500 text-sm">Auto Refresh</div>
+                    <div class="text-lg font-semibold text-green-600 mt-2">Every 5s</div>
+                </div>
+            </div>
+
+            <!-- Tab Content -->
+            <div id="content-inscriptions" class="tab-content">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Number</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Inscription ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Content Type</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inscriptions-table" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="content-drc20" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticker</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Max Supply</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Minted</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deployer</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                            </tr>
+                        </thead>
+                        <tbody id="drc20-table" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="content-dunes" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Spaced Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mints</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Burned</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dunes-table" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="content-lotto" class="tab-content hidden">
+                <div class="space-y-6">
+                    <div class="bg-white rounded-lg shadow overflow-hidden">
+                        <div class="px-6 py-4 bg-gray-50 border-b">
+                            <h3 class="text-lg font-semibold">Recent Tickets</h3>
+                        </div>
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lotto</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tip %</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lotto-tickets-table" class="bg-white divide-y divide-gray-200">
+                                <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow overflow-hidden">
+                        <div class="px-6 py-4 bg-gray-50 border-b">
+                            <h3 class="text-lg font-semibold">🎉 Winners</h3>
+                        </div>
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lotto</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Winner</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payout (DOGE)</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lotto-winners-table" class="bg-white divide-y divide-gray-200">
+                                <tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentTab = 'inscriptions';
+
+        function switchTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.classList.remove('tab-active', 'text-orange-600', 'font-semibold', 'border-b-2', 'border-orange-500');
+                btn.classList.add('text-gray-600');
+            });
+            document.getElementById(`tab-${tab}`).classList.add('tab-active');
+            document.getElementById(`tab-${tab}`).classList.remove('text-gray-600');
+
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+
+            currentTab = tab;
+            loadTabData(tab);
+        }
+
+        async function loadStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                document.getElementById('stat-inscriptions').textContent = 
+                    data.total_inscriptions?.toLocaleString() || '0';
+                document.getElementById('stat-block').textContent = 
+                    data.latest_indexed_block?.toLocaleString() || '-';
+                
+                if (data.latest_block_timestamp) {
+                    const date = new Date(data.latest_block_timestamp * 1000);
+                    document.getElementById('stat-time').textContent = date.toLocaleTimeString();
+                }
+                
+                document.getElementById('status-info').textContent = 
+                    `${data.total_inscriptions?.toLocaleString() || 0} inscriptions`;
+            } catch (e) {
+                console.error('Failed to load status:', e);
+            }
+        }
+
+        async function loadTabData(tab) {
+            switch(tab) {
+                case 'inscriptions':
+                    await loadInscriptions();
+                    break;
+                case 'drc20':
+                    await loadDrc20();
+                    break;
+                case 'dunes':
+                    await loadDunes();
+                    break;
+                case 'lotto':
+                    await loadLotto();
+                    break;
+            }
+        }
+
+        async function loadInscriptions() {
+            try {
+                const res = await fetch('/api/inscriptions/recent');
+                const data = await res.json();
+                
+                const tbody = document.getElementById('inscriptions-table');
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No inscriptions yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(item => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            #${item.inscription_number.toLocaleString()}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            ${item.inscription_id.substring(0, 20)}...
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.content_type || 'unknown'}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.content_length ? (item.content_length / 1024).toFixed(1) + ' KB' : '-'}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.block_height.toLocaleString()}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load inscriptions:', e);
+                document.getElementById('inscriptions-table').innerHTML = 
+                    '<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error loading data</td></tr>';
+            }
+        }
+
+        async function loadDrc20() {
+            try {
+                const res = await fetch('/api/drc20/tokens?limit=50');
+                const data = await res.json();
+                
+                const tbody = document.getElementById('drc20-table');
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No DRC-20 tokens yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(item => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-600">
+                            ${item.tick}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.max_supply}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.minted}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500 font-mono">
+                            ${item.deployer.substring(0, 15)}...
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.block_height.toLocaleString()}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load DRC-20:', e);
+                document.getElementById('drc20-table').innerHTML = 
+                    '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">DRC-20 indexing not enabled</td></tr>';
+            }
+        }
+
+        async function loadDunes() {
+            try {
+                const res = await fetch('/api/dunes/tokens?limit=50');
+                const data = await res.json();
+                
+                const tbody = document.getElementById('dunes-table');
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No Dunes tokens yet</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(item => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-600">
+                            ${item.name}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.spaced_name}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.mints.toLocaleString()}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ${item.burned}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ${item.block.toLocaleString()}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load Dunes:', e);
+                document.getElementById('dunes-table').innerHTML = 
+                    '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Dunes indexing not enabled</td></tr>';
+            }
+        }
+
+        async function loadLotto() {
+            try {
+                const [ticketsRes, winnersRes] = await Promise.all([
+                    fetch('/api/lotto/tickets?limit=20'),
+                    fetch('/api/lotto/winners?limit=20')
+                ]);
+                const tickets = await ticketsRes.json();
+                const winners = await winnersRes.json();
+                
+                const ticketsTbody = document.getElementById('lotto-tickets-table');
+                if (tickets.length === 0) {
+                    ticketsTbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No lotto tickets yet</td></tr>';
+                } else {
+                    ticketsTbody.innerHTML = tickets.map(item => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 text-sm font-mono text-gray-900">
+                                ${item.ticket_id.substring(0, 16)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-orange-600">
+                                ${item.lotto_name}
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500 font-mono">
+                                ${item.player_address.substring(0, 15)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm ${item.tip_percent > 0 ? 'text-green-600 font-semibold' : 'text-gray-400'}">
+                                ${item.tip_percent}%
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${item.block_height.toLocaleString()}
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+
+                const winnersTbody = document.getElementById('lotto-winners-table');
+                if (winners.length === 0) {
+                    winnersTbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No winners yet</td></tr>';
+                } else {
+                    winnersTbody.innerHTML = winners.map(item => {
+                        const netPayout = (item.gross_payout_koinu - item.tip_deduction_koinu) / 100000000;
+                        return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 text-sm font-mono text-gray-900">
+                                ${item.ticket_id.substring(0, 16)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-orange-600">
+                                ${item.lotto_name}
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500 font-mono">
+                                ${item.player_address.substring(0, 15)}...
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600">
+                                ${netPayout.toFixed(2)} Ð
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${item.draw_block.toLocaleString()}
+                            </td>
+                        </tr>
+                    `}).join('');
+                }
+            } catch (e) {
+                console.error('Failed to load lotto data:', e);
+            }
+        }
+
+        // Initial load
+        loadStatus();
+        loadInscriptions();
+
+        // Auto-refresh every 5 seconds
+        setInterval(() => {
+            loadStatus();
+            loadTabData(currentTab);
+        }, 5000);
+    </script>
+</body>
+</html>

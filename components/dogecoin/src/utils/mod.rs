@@ -244,7 +244,12 @@ where
     match result {
         Ok(value) => value,
         Err(e) => {
+            // Print directly to stderr first — slog's async drain may not flush before
+            // process::exit kills the process, causing silent or truncated crash output.
+            eprintln!("FATAL [{thread_name}]: {e}");
             try_crit!(ctx, "[{thread_name}]: {e}");
+            // Give the async log drain ~200ms to flush before exiting.
+            std::thread::sleep(std::time::Duration::from_millis(200));
             std::process::exit(1);
         }
     }

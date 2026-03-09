@@ -23,6 +23,10 @@ pub struct Config {
     pub web: Option<WebConfig>,
     pub protocols: ProtocolsConfig,
     pub webhooks: WebhooksConfig,
+    /// Override the default first-inscription height. When set, the indexer starts
+    /// from this block instead of the built-in chain constant (4,600,000 on mainnet).
+    /// Wipe `data/` and the Postgres databases before using this.
+    pub start_block: Option<u64>,
 }
 
 /// Webhook delivery configuration.
@@ -243,6 +247,7 @@ impl Config {
             }),
             protocols: ProtocolsConfig::default(),
             webhooks: WebhooksConfig::default(),
+            start_block: None,
         }
     }
 
