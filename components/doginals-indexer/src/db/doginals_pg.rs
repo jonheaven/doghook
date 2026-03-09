@@ -2432,8 +2432,6 @@ struct ScoredTicketRow {
     bonus_score: u64,
     minted_height: u64,
     tip_percent: u8,
-    fingerprint: Option<String>,
-    classic_numbers: Vec<u16>,
 }
 
 fn score_tickets(
@@ -2451,8 +2449,6 @@ fn score_tickets(
             bonus_score: bonus_score_for_ticket(ticket, draw, template),
             minted_height: ticket.minted_height,
             tip_percent: ticket.tip_percent,
-            fingerprint: ticket.fingerprint.clone(),
-            classic_numbers: ticket.classic_numbers.clone(),
         })
         .collect();
     scored.sort_by(|left, right| {

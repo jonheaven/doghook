@@ -8,7 +8,7 @@ use crate::db::{
         db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry, db_rune::DbDune,
         db_supply_change::DbSupplyChange,
     },
-    pg_insert_balance_changes, pg_insert_ledger_entries, pg_insert_runes, pg_insert_supply_changes,
+    pg_insert_balance_changes, pg_insert_ledger_entries, pg_insert_dunes, pg_insert_supply_changes,
 };
 
 /// Holds rows that have yet to be inserted into the database.
@@ -42,7 +42,7 @@ impl DbCache {
         try_debug!(ctx, "Flushing DB cache...");
         if !self.runes.is_empty() {
             try_debug!(ctx, "Flushing {} runes", self.runes.len());
-            let _ = pg_insert_runes(&self.runes, db_tx, ctx).await;
+            let _ = pg_insert_dunes(&self.runes, db_tx, ctx).await;
             self.runes.clear();
         }
         if !self.supply_changes.is_empty() {
