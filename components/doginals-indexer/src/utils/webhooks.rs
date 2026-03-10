@@ -1,23 +1,75 @@
 use dogecoin::{try_warn, utils::Context};
+use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde_json::Value;
+use sha2::Sha256;
 
-/// Fire-and-forget: POST `payload` to every URL in `urls`.
-/// Errors are logged as warnings — a failed delivery never blocks indexing.
-pub async fn fire_webhooks(urls: &[String], payload: Value, ctx: &Context) {
+type HmacSha256 = Hmac<Sha256>;
+
+/// POST `payload` to every URL in `urls`, with exponential-backoff retries and optional
+/// HMAC-SHA256 request signing.
+///
+/// If `hmac_secret` is `Some`, each request includes:
+///   `X-Doghook-Signature: sha256=<hex(HMAC-SHA256(secret, body))>`
+/// Receivers can verify authenticity with the same secret.
+///
+/// Delivery failures are logged as warnings — they never block indexing.
+/// Each URL is delivered serially with up to 5 attempts (waits: 2 s, 4 s, 8 s, 16 s, 32 s).
+pub async fn fire_webhooks(
+    urls: &[String],
+    hmac_secret: Option<&str>,
+    payload: Value,
+    ctx: &Context,
+) {
     if urls.is_empty() {
         return;
     }
     let client = Client::new();
+    let body = payload.to_string();
+
+    let sig = hmac_secret.map(|secret| {
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+            .expect("HMAC accepts keys of any length");
+        mac.update(body.as_bytes());
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    });
+
     for url in urls {
-        match client.post(url).json(&payload).send().await {
-            Ok(resp) if resp.status().is_success() => {}
-            Ok(resp) => {
-                try_warn!(ctx, "Webhook POST to {url} returned status {}", resp.status());
+        let mut attempts: u32 = 0;
+        loop {
+            let mut builder = client
+                .post(url)
+                .header("Content-Type", "application/json")
+                .body(body.clone());
+            if let Some(ref s) = sig {
+                builder = builder.header("X-Doghook-Signature", s);
             }
-            Err(e) => {
-                try_warn!(ctx, "Webhook POST to {url} failed: {e}");
+            match builder.send().await {
+                Ok(resp) if resp.status().is_success() => break,
+                Ok(resp) => {
+                    if attempts >= 4 {
+                        try_warn!(
+                            ctx,
+                            "Webhook {url} gave up after {} retries (last status: {})",
+                            attempts,
+                            resp.status()
+                        );
+                        break;
+                    }
+                }
+                Err(e) => {
+                    if attempts >= 4 {
+                        try_warn!(
+                            ctx,
+                            "Webhook {url} gave up after {} retries: {e}",
+                            attempts
+                        );
+                        break;
+                    }
+                }
             }
+            attempts += 1;
+            tokio::time::sleep(tokio::time::Duration::from_secs(2u64.pow(attempts))).await;
         }
     }
 }

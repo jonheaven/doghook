@@ -1,0 +1,40 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: doginals
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  doghook:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # RPC credentials — override here or in doghook.toml
+      DOGE_RPC_USERNAME: ${DOGE_RPC_USERNAME:-doge}
+      DOGE_RPC_PASSWORD: ${DOGE_RPC_PASSWORD:-doge}
+      # Optional: HMAC signing secret for webhook receivers
+      WEBHOOK_HMAC_SECRET: ${WEBHOOK_HMAC_SECRET:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./doghook.toml:/etc/doghook.toml:ro
+      # Mount Dogecoin Core data directory for fast .blk reads (optional but recommended)
+      # - /path/to/.dogecoin:/root/.dogecoin:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

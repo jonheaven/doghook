@@ -86,6 +86,9 @@ pub struct WebhooksConfig {
     pub enabled: bool,
     /// List of URLs that will receive POST requests for every event.
     pub urls: Vec<String>,
+    /// Optional HMAC-SHA256 signing secret. When set, every request includes
+    /// `X-Doghook-Signature: sha256=<hex>` so receivers can verify authenticity.
+    pub hmac_secret: Option<String>,
 }
 
 #[derive(Clone, Debug)]

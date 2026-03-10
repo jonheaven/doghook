@@ -1308,6 +1308,7 @@ dependencies = [
  "fxhash",
  "hex",
  "hiro-system-kit",
+ "hmac",
  "hyper 0.14.27",
  "lazy_static",
  "lru 0.13.0",

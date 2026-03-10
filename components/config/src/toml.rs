@@ -150,6 +150,8 @@ pub struct DogemapProtocolConfigToml {
 pub struct WebhooksConfigToml {
     pub enabled: Option<bool>,
     pub urls: Option<Vec<String>>,
+    /// HMAC-SHA256 signing secret. Can also be set via WEBHOOK_HMAC_SECRET env var.
+    pub hmac_secret: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -279,6 +281,8 @@ impl ConfigToml {
             WebhooksConfig {
                 enabled: w.enabled.unwrap_or(false),
                 urls: w.urls.unwrap_or_default(),
+                hmac_secret: w.hmac_secret
+                    .or_else(|| std::env::var("WEBHOOK_HMAC_SECRET").ok()),
             }
         };
 
