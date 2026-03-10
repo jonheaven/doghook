@@ -23,6 +23,7 @@ fn client() -> &'static Client {
 
 static WEBHOOK_SUCCESS: OnceLock<IntCounter> = OnceLock::new();
 static WEBHOOK_FAILURE: OnceLock<IntCounter> = OnceLock::new();
+static WEBHOOK_RETRIES: OnceLock<IntCounter> = OnceLock::new();
 
 fn webhook_success() -> &'static IntCounter {
     WEBHOOK_SUCCESS.get_or_init(|| {
@@ -39,6 +40,19 @@ fn webhook_failure() -> &'static IntCounter {
         register_int_counter!(
             "doghook_webhook_failures_total",
             "Webhook deliveries that exhausted all retries"
+        )
+        .unwrap()
+    })
+}
+
+/// Incremented each time a delivery is retried (i.e. first attempt failed).
+/// rate(doghook_webhook_retries_total[5m]) > 0 → receiver is flaky.
+/// retries_total / deliveries_total → average retries per successful delivery.
+fn webhook_retries() -> &'static IntCounter {
+    WEBHOOK_RETRIES.get_or_init(|| {
+        register_int_counter!(
+            "doghook_webhook_retries_total",
+            "Individual webhook retry attempts (excludes first attempt)"
         )
         .unwrap()
     })
@@ -116,6 +130,7 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
                     }
                 }
                 attempts += 1;
+                webhook_retries().inc();
                 tokio::time::sleep(tokio::time::Duration::from_secs(2u64.pow(attempts))).await;
             }
         }
