@@ -2,8 +2,16 @@ use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde_json::Value;
 use sha2::Sha256;
+use std::sync::OnceLock;
 
 type HmacSha256 = Hmac<Sha256>;
+
+// Shared client so all webhook tasks reuse the same connection pool.
+static CLIENT: OnceLock<Client> = OnceLock::new();
+
+fn client() -> &'static Client {
+    CLIENT.get_or_init(Client::new)
+}
 
 /// Spawn a background task to deliver `payload` to all `urls` with HMAC signing and
 /// exponential-backoff retries. Returns immediately — never blocks the indexer.
@@ -18,7 +26,7 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
         return;
     }
     tokio::spawn(async move {
-        let client = Client::new();
+        let client = client();
         let body = payload.to_string();
 
         let sig = hmac_secret.as_deref().map(|secret| {
