@@ -6,12 +6,13 @@ use std::{
 use bitcoin::Network;
 
 use crate::{
-    DogecoinConfig, DogecoinDataSource, Config, DoginalsPredicatesConfig, MetricsConfig, WebConfig,
-    DoginalDrc20Config, DoginalConfig, DoginalMetaProtocolsConfig, PgDatabaseConfig, ResourcesConfig,
-    DunesConfig, StorageConfig, ProtocolsConfig, DnsProtocolConfig, DogemapProtocolConfig,
-    DogetagProtocolConfig, LottoProtocolConfig, WebhooksConfig,
-    DEFAULT_DOGECOIN_RPC_THREADS, DEFAULT_DOGECOIN_RPC_TIMEOUT, DEFAULT_INDEXER_CHANNEL_CAPACITY,
-    DEFAULT_LRU_CACHE_SIZE, DEFAULT_MEMORY_AVAILABLE, DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
+    CharmsProtocolConfig, Config, DnsProtocolConfig, DogecoinConfig, DogecoinDataSource,
+    DogemapProtocolConfig, DogetagProtocolConfig, DoginalConfig, DoginalDrc20Config,
+    DoginalMetaProtocolsConfig, DoginalsPredicatesConfig, DunesConfig, LottoProtocolConfig,
+    MetricsConfig, PgDatabaseConfig, ProtocolsConfig, ResourcesConfig, StorageConfig, WebConfig,
+    WebhooksConfig, DEFAULT_DOGECOIN_RPC_THREADS, DEFAULT_DOGECOIN_RPC_TIMEOUT,
+    DEFAULT_INDEXER_CHANNEL_CAPACITY, DEFAULT_LRU_CACHE_SIZE, DEFAULT_MEMORY_AVAILABLE,
+    DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
 };
 
 #[derive(Deserialize, Clone, Debug)]
@@ -120,10 +121,16 @@ pub struct ProtocolsConfigToml {
     pub dogemap: Option<DogemapProtocolConfigToml>,
     pub lotto: Option<LottoProtocolConfigToml>,
     pub dogetag: Option<DogetagProtocolConfigToml>,
+    pub charms: Option<CharmsProtocolConfigToml>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DogetagProtocolConfigToml {
+    pub enabled: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct CharmsProtocolConfigToml {
     pub enabled: Option<bool>,
 }
 
@@ -189,17 +196,16 @@ impl ConfigToml {
     }
 
     fn config_from_toml(toml: ConfigToml) -> Result<Config, String> {
-        let bitcoin_network = match toml.dogecoin.network.as_str() {
-            "devnet" => Network::Regtest,
-            "testnet" => Network::Testnet,
-            "mainnet" => Network::Bitcoin,
-            _ => {
-                return Err(
+        let bitcoin_network =
+            match toml.dogecoin.network.as_str() {
+                "devnet" => Network::Regtest,
+                "testnet" => Network::Testnet,
+                "mainnet" => Network::Bitcoin,
+                _ => return Err(
                     "dogecoin.network not supported (expected one of: mainnet, testnet, devnet)"
                         .to_string(),
-                )
-            }
-        };
+                ),
+            };
         let ordinals = match toml.doginals {
             Some(ordinals) => Some(DoginalConfig {
                 db: ordinals.db.to_config(),
@@ -255,6 +261,9 @@ impl ConfigToml {
                 dogetag: DogetagProtocolConfig {
                     enabled: p.dogetag.as_ref().and_then(|d| d.enabled).unwrap_or(true),
                 },
+                charms: CharmsProtocolConfig {
+                    enabled: p.charms.as_ref().and_then(|c| c.enabled).unwrap_or(true),
+                },
                 lotto: LottoProtocolConfig {
                     enabled: p.lotto.as_ref().and_then(|l| l.enabled).unwrap_or(true),
                     content_prefixes: p
@@ -281,7 +290,8 @@ impl ConfigToml {
             WebhooksConfig {
                 enabled: w.enabled.unwrap_or(false),
                 urls: w.urls.unwrap_or_default(),
-                hmac_secret: w.hmac_secret
+                hmac_secret: w
+                    .hmac_secret
                     .or_else(|| std::env::var("WEBHOOK_HMAC_SECRET").ok()),
             }
         };

@@ -106,6 +106,35 @@ pub struct DogetagEntry {
     pub message_bytes: i32,
 }
 
+#[derive(Serialize)]
+pub struct CharmsBalanceEntry {
+    pub ticker: String,
+    pub address: String,
+    pub balance: String,
+}
+
+#[derive(Serialize)]
+pub struct CharmsSpellEntry {
+    pub txid: String,
+    pub vout: u32,
+    pub block_height: u64,
+    pub block_timestamp: u32,
+    pub version: String,
+    pub tag: String,
+    pub op: String,
+    pub id: String,
+    pub chain_id: String,
+    pub ticker: Option<String>,
+    pub name: Option<String>,
+    pub amount: Option<u64>,
+    pub decimals: Option<u8>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub beam_to: Option<String>,
+    pub beam_proof: Option<String>,
+    pub raw_cbor: String,
+}
+
 pub async fn get_inscriptions(
     State(state): State<AppState>,
     Query(params): Query<PaginationParams>,
@@ -514,7 +543,9 @@ pub async fn get_dogemap_claims(
     Ok(Json(claims))
 }
 
-pub async fn get_status(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+pub async fn get_status(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let client = state
         .doginals_pool
         .get()
@@ -525,7 +556,7 @@ pub async fn get_status(State(state): State<AppState>) -> Result<Json<serde_json
         .query_one("SELECT COUNT(*) FROM inscriptions", &[])
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    
+
     let total_inscriptions: i64 = count_row.get(0);
 
     let latest_row = client
@@ -589,6 +620,140 @@ pub async fn get_dogetags(
     Ok(Json(tags))
 }
 
+pub async fn get_charms_balance(
+    State(state): State<AppState>,
+    Path((ticker, address)): Path<(String, String)>,
+) -> Result<Json<CharmsBalanceEntry>, StatusCode> {
+    let client = state
+        .doginals_pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let balance = client
+        .query_opt(
+            "SELECT balance::text
+             FROM charms_balances
+             WHERE ticker = $1 AND address = $2",
+            &[&ticker, &address],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map(|row| row.get::<_, String>(0))
+        .unwrap_or_else(|| "0".to_string());
+
+    Ok(Json(CharmsBalanceEntry {
+        ticker,
+        address,
+        balance,
+    }))
+}
+
+pub async fn get_charms_history(
+    State(state): State<AppState>,
+    Path((ticker, address)): Path<(String, String)>,
+) -> Result<Json<Vec<CharmsSpellEntry>>, StatusCode> {
+    let client = state
+        .doginals_pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let rows = client
+        .query(
+            "SELECT txid, vout, block_height::bigint, block_timestamp, version, tag, op,
+                    identity, chain_id, ticker, name, amount::text, decimals::int,
+                    from_addr, to_addr, beam_to, beam_proof, raw_cbor
+             FROM charms_spells
+             WHERE ticker = $1
+               AND (from_addr = $2 OR to_addr = $2)
+             ORDER BY block_height DESC, id DESC",
+            &[&ticker, &address],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let spells: Vec<CharmsSpellEntry> = rows
+        .iter()
+        .map(|row| CharmsSpellEntry {
+            txid: row.get(0),
+            vout: row.get::<_, i64>(1) as u32,
+            block_height: row.get::<_, i64>(2) as u64,
+            block_timestamp: row.get::<_, i64>(3) as u32,
+            version: row.get(4),
+            tag: row.get(5),
+            op: row.get(6),
+            id: row.get(7),
+            chain_id: row.get(8),
+            ticker: row.get(9),
+            name: row.get(10),
+            amount: row
+                .get::<_, Option<String>>(11)
+                .and_then(|value| value.parse::<u64>().ok()),
+            decimals: row.get::<_, Option<i32>>(12).map(|value| value as u8),
+            from: row.get(13),
+            to: row.get(14),
+            beam_to: row.get(15),
+            beam_proof: row.get(16),
+            raw_cbor: hex::encode(row.get::<_, Vec<u8>>(17)),
+        })
+        .collect();
+
+    Ok(Json(spells))
+}
+
+pub async fn get_charms_spells(
+    State(state): State<AppState>,
+    Path(txid): Path<String>,
+) -> Result<Json<Vec<CharmsSpellEntry>>, StatusCode> {
+    let client = state
+        .doginals_pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let rows = client
+        .query(
+            "SELECT txid, vout, block_height::bigint, block_timestamp, version, tag, op,
+                    identity, chain_id, ticker, name, amount::text, decimals::int,
+                    from_addr, to_addr, beam_to, beam_proof, raw_cbor
+             FROM charms_spells
+             WHERE LOWER(txid) = LOWER($1)
+             ORDER BY vout ASC, id ASC",
+            &[&txid],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let spells: Vec<CharmsSpellEntry> = rows
+        .iter()
+        .map(|row| CharmsSpellEntry {
+            txid: row.get(0),
+            vout: row.get::<_, i64>(1) as u32,
+            block_height: row.get::<_, i64>(2) as u64,
+            block_timestamp: row.get::<_, i64>(3) as u32,
+            version: row.get(4),
+            tag: row.get(5),
+            op: row.get(6),
+            id: row.get(7),
+            chain_id: row.get(8),
+            ticker: row.get(9),
+            name: row.get(10),
+            amount: row
+                .get::<_, Option<String>>(11)
+                .and_then(|value| value.parse::<u64>().ok()),
+            decimals: row.get::<_, Option<i32>>(12).map(|value| value as u8),
+            from: row.get(13),
+            to: row.get(14),
+            beam_to: row.get(15),
+            beam_proof: row.get(16),
+            raw_cbor: hex::encode(row.get::<_, Vec<u8>>(17)),
+        })
+        .collect();
+
+    Ok(Json(spells))
+}
+
 // ---------------------------------------------------------------------------
 // Inscription decode — no index required, hits Dogecoin Core RPC directly
 // ---------------------------------------------------------------------------
@@ -625,8 +790,7 @@ fn fetch_envelopes(
     let raw_hex = rpc
         .get_raw_transaction_hex(&txid, None)
         .map_err(|e| format!("getrawtransaction {}: {}", txid_str, e))?;
-    let raw_bytes = hex::decode(&raw_hex)
-        .map_err(|e| format!("hex decode error: {}", e))?;
+    let raw_bytes = hex::decode(&raw_hex).map_err(|e| format!("hex decode error: {}", e))?;
     let tx: bitcoin::Transaction = bitcoin::consensus::deserialize(&raw_bytes)
         .map_err(|e| format!("tx deserialize error: {}", e))?;
     let envelopes = ParsedEnvelope::from_transactions_dogecoin(&[tx]);
@@ -642,7 +806,10 @@ pub async fn decode_inscription(
     } else if let Some(t) = &params.txid {
         (t.clone(), 0)
     } else {
-        return Err((StatusCode::BAD_REQUEST, "Provide inscription_id or txid".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Provide inscription_id or txid".to_string(),
+        ));
     };
 
     let config = state.dogecoin_config.clone();
@@ -705,8 +872,7 @@ pub async fn get_inscription_content(
     let config = state.dogecoin_config.clone();
     let txid_clone = txid_str.clone();
 
-    let result = tokio::task::spawn_blocking(move || fetch_envelopes(&config, &txid_clone))
-        .await;
+    let result = tokio::task::spawn_blocking(move || fetch_envelopes(&config, &txid_clone)).await;
 
     let envelopes = match result {
         Ok(Ok((e, _))) => e,
@@ -734,11 +900,7 @@ pub async fn get_inscription_content(
         .to_string();
     let body = insc.body.clone().unwrap_or_default();
 
-    (
-        [(header::CONTENT_TYPE, content_type)],
-        Bytes::from(body),
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, content_type)], Bytes::from(body)).into_response()
 }
 
 pub async fn index_page() -> Html<&'static str> {
@@ -770,10 +932,7 @@ pub async fn sse_events(
 ///
 /// doghook automatically registers http://127.0.0.1:{port}/api/webhook as a webhook
 /// URL at startup, so no manual config is needed.
-pub async fn receive_webhook(
-    State(state): State<super::AppState>,
-    body: String,
-) -> StatusCode {
+pub async fn receive_webhook(State(state): State<super::AppState>, body: String) -> StatusCode {
     // Ignore send errors — they just mean no SSE clients are connected right now.
     let _ = state.event_tx.send(body);
     StatusCode::OK
@@ -781,7 +940,10 @@ pub async fn receive_webhook(
 
 pub async fn wallet_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         include_str!("../../static/wallet.js"),
     )
 }

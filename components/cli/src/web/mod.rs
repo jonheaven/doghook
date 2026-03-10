@@ -61,6 +61,9 @@ pub async fn start_web_server(
         .route("/api/dns/names", get(get_dns_names))
         .route("/api/dogemap/claims", get(get_dogemap_claims))
         .route("/api/dogetags", get(get_dogetags))
+        .route("/charms/balance/:ticker/:address", get(get_charms_balance))
+        .route("/charms/history/:ticker/:address", get(get_charms_history))
+        .route("/charms/spells/:txid", get(get_charms_spells))
         .route("/api/status", get(get_status))
         .route("/api/decode", get(decode_inscription))
         .route("/content/:inscription_id", get(get_inscription_content))
@@ -245,6 +248,41 @@ async fn openapi_spec() -> impl IntoResponse {
                     "responses": { "200": { "description": "Dogetag list" } }
                 }
             },
+            "/charms/balance/{ticker}/{address}": {
+                "get": {
+                    "summary": "Get a Charms balance for one ticker/address pair",
+                    "operationId": "getCharmsBalance",
+                    "tags": ["Charms"],
+                    "parameters": [
+                        { "name": "ticker", "in": "path", "required": true, "schema": { "type": "string" } },
+                        { "name": "address", "in": "path", "required": true, "schema": { "type": "string" } }
+                    ],
+                    "responses": { "200": { "description": "Charms balance snapshot" } }
+                }
+            },
+            "/charms/history/{ticker}/{address}": {
+                "get": {
+                    "summary": "List Charms spells affecting one ticker/address pair",
+                    "operationId": "getCharmsHistory",
+                    "tags": ["Charms"],
+                    "parameters": [
+                        { "name": "ticker", "in": "path", "required": true, "schema": { "type": "string" } },
+                        { "name": "address", "in": "path", "required": true, "schema": { "type": "string" } }
+                    ],
+                    "responses": { "200": { "description": "Charms spell history" } }
+                }
+            },
+            "/charms/spells/{txid}": {
+                "get": {
+                    "summary": "Fetch all Charms spells emitted by one transaction",
+                    "operationId": "getCharmsSpells",
+                    "tags": ["Charms"],
+                    "parameters": [
+                        { "name": "txid", "in": "path", "required": true, "schema": { "type": "string" } }
+                    ],
+                    "responses": { "200": { "description": "Charms spell list for the transaction" } }
+                }
+            },
             "/api/lotto/tickets": {
                 "get": {
                     "summary": "List lotto tickets",
@@ -327,6 +365,7 @@ async fn openapi_spec() -> impl IntoResponse {
             { "name": "DNS" },
             { "name": "Dogemap" },
             { "name": "Dogetag" },
+            { "name": "Charms" },
             { "name": "Lotto" }
         ]
     }))

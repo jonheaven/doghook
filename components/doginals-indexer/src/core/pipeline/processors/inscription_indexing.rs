@@ -7,23 +7,24 @@ use std::{
     },
 };
 
+use config::Config;
+use dashmap::DashMap;
 use dogecoin::{
     try_info, try_warn,
     types::{DogecoinBlockData, OperationType, TransactionBytesCursor, TransactionIdentifier},
     utils::Context,
 };
-use config::Config;
-use dashmap::DashMap;
 use fxhash::FxHasher;
 use postgres::{pg_begin, pg_pool_client};
 
 use crate::{
     core::{
         meta_protocols::{
-            drc20::{
-                drc20_pg, cache::Brc20MemoryCache, index::index_block_and_insert_drc20_operations,
-            },
+            charms::{identity_hex, try_parse_charms_spell, IndexedCharmsSpell},
             dogetag::try_parse_dogetag,
+            drc20::{
+                cache::Brc20MemoryCache, drc20_pg, index::index_block_and_insert_drc20_operations,
+            },
         },
         protocol::{
             inscription_parsing::{
@@ -136,6 +137,7 @@ pub async fn index_block(
         let mut lotto_mints: Vec<ParsedLottoMint> = Vec::new();
         // Dogetags: (txid, sender_address, message, raw_script)
         let mut dogetag_list: Vec<(String, Option<String>, String, String)> = Vec::new();
+        let mut charms_list: Vec<IndexedCharmsSpell> = Vec::new();
 
         // Measure inscription parsing time
         let parsing_start = std::time::Instant::now();
@@ -173,6 +175,31 @@ pub async fn index_block(
                         ));
                         break; // one tag per transaction
                     }
+                }
+            }
+        }
+
+        // Charms scan - OP_RETURN payloads with the `CHARMS` magic prefix followed by CBOR.
+        // Invalid or malformed payloads are ignored silently, matching Dogetag's behavior.
+        if config.charms_enabled() {
+            for tx in &block.transactions {
+                let txid = tx.transaction_identifier.get_hash_bytes_str().to_string();
+
+                for (vout, output) in tx.metadata.outputs.iter().enumerate() {
+                    let Some(indexed) = try_parse_charms_spell(&output.script_pubkey) else {
+                        continue;
+                    };
+
+                    let spell_txid = indexed.spell.txid.trim_start_matches("0x");
+                    if !spell_txid.eq_ignore_ascii_case(&txid)
+                        || indexed.spell.vout != vout as u32
+                        || indexed.spell.block_height != block_height
+                        || indexed.spell.block_timestamp != block.timestamp
+                    {
+                        continue;
+                    }
+
+                    charms_list.push(indexed);
                 }
             }
         }
@@ -250,7 +277,11 @@ pub async fn index_block(
                 let number: i64 = row.get(2);
                 let content_type: String = row.get(3);
                 let address: String = row.get(4);
-                let owner = if address.is_empty() { "unknown" } else { address.as_str() };
+                let owner = if address.is_empty() {
+                    "unknown"
+                } else {
+                    address.as_str()
+                };
                 try_info!(
                     ctx,
                     "Inscription reveal: #{} id={} tx={} owner={} content_type={}",
@@ -294,33 +325,51 @@ pub async fn index_block(
 
         // DNS — write name registrations detected in this block
         if !dns_map.is_empty() {
-            if let Err(e) = doginals_pg::insert_dns_names(&dns_map, block_height, block.timestamp, &ord_tx).await {
+            if let Err(e) =
+                doginals_pg::insert_dns_names(&dns_map, block_height, block.timestamp, &ord_tx)
+                    .await
+            {
                 return Err(format!("Failed to insert DNS names: {}", e));
             }
-            try_info!(ctx, "Indexed {} DNS name(s) at block #{block_height}", dns_map.len());
+            try_info!(
+                ctx,
+                "Indexed {} DNS name(s) at block #{block_height}",
+                dns_map.len()
+            );
             for (name, inscription_id) in dns_map.iter().take(5) {
-                try_info!(
-                    ctx,
-                    "DNS claim: {} <- {}",
-                    name,
-                    inscription_id
-                );
+                try_info!(ctx, "DNS claim: {} <- {}", name, inscription_id);
             }
             let webhook_urls = config.webhook_urls().to_vec();
             if !webhook_urls.is_empty() {
                 for (name, inscription_id) in &dns_map {
-                    let payload = webhooks::dns_event(name, inscription_id, block_height, block.timestamp);
-                    webhooks::fire_webhooks(webhook_urls.clone(), config.webhooks.hmac_secret.clone(), payload);
+                    let payload =
+                        webhooks::dns_event(name, inscription_id, block_height, block.timestamp);
+                    webhooks::fire_webhooks(
+                        webhook_urls.clone(),
+                        config.webhooks.hmac_secret.clone(),
+                        payload,
+                    );
                 }
             }
         }
 
         // Dogemap — write block claims detected in this block
         if !dogemap_map.is_empty() {
-            if let Err(e) = doginals_pg::insert_dogemap_claims(&dogemap_map, block_height, block.timestamp, &ord_tx).await {
+            if let Err(e) = doginals_pg::insert_dogemap_claims(
+                &dogemap_map,
+                block_height,
+                block.timestamp,
+                &ord_tx,
+            )
+            .await
+            {
                 return Err(format!("Failed to insert Dogemap claims: {}", e));
             }
-            try_info!(ctx, "Indexed {} Dogemap claim(s) at block #{block_height}", dogemap_map.len());
+            try_info!(
+                ctx,
+                "Indexed {} Dogemap claim(s) at block #{block_height}",
+                dogemap_map.len()
+            );
             for (block_number, inscription_id) in dogemap_map.iter().take(5) {
                 try_info!(
                     ctx,
@@ -332,27 +381,40 @@ pub async fn index_block(
             let webhook_urls = config.webhook_urls().to_vec();
             if !webhook_urls.is_empty() {
                 for (block_number, inscription_id) in &dogemap_map {
-                    let payload = webhooks::dogemap_event(*block_number, inscription_id, block_height, block.timestamp);
-                    webhooks::fire_webhooks(webhook_urls.clone(), config.webhooks.hmac_secret.clone(), payload);
+                    let payload = webhooks::dogemap_event(
+                        *block_number,
+                        inscription_id,
+                        block_height,
+                        block.timestamp,
+                    );
+                    webhooks::fire_webhooks(
+                        webhook_urls.clone(),
+                        config.webhooks.hmac_secret.clone(),
+                        payload,
+                    );
                 }
             }
         }
 
         // Dogetags — write all tags found in this block
         if !dogetag_list.is_empty() {
-            if let Err(e) = doginals_pg::insert_dogetags(
-                &dogetag_list,
-                block_height,
-                block.timestamp,
-                &ord_tx,
-            )
-            .await
+            if let Err(e) =
+                doginals_pg::insert_dogetags(&dogetag_list, block_height, block.timestamp, &ord_tx)
+                    .await
             {
                 return Err(format!("Failed to insert dogetags: {}", e));
             }
-            try_info!(ctx, "Indexed {} dogetag(s) at block #{block_height}", dogetag_list.len());
+            try_info!(
+                ctx,
+                "Indexed {} dogetag(s) at block #{block_height}",
+                dogetag_list.len()
+            );
             for (txid, sender, message, _) in dogetag_list.iter().take(5) {
-                let short_txid = if txid.len() > 16 { &txid[..16] } else { txid.as_str() };
+                let short_txid = if txid.len() > 16 {
+                    &txid[..16]
+                } else {
+                    txid.as_str()
+                };
                 let message_preview: String = message.chars().take(80).collect();
                 try_info!(
                     ctx,
@@ -372,7 +434,63 @@ pub async fn index_block(
                         block_height,
                         block.timestamp,
                     );
-                    webhooks::fire_webhooks(webhook_urls.clone(), config.webhooks.hmac_secret.clone(), payload);
+                    webhooks::fire_webhooks(
+                        webhook_urls.clone(),
+                        config.webhooks.hmac_secret.clone(),
+                        payload,
+                    );
+                }
+            }
+        }
+
+        if !charms_list.is_empty() {
+            if let Err(e) = doginals_pg::insert_charms_spells(&charms_list, &ord_tx).await {
+                return Err(format!("Failed to insert charms spells: {}", e));
+            }
+            try_info!(
+                ctx,
+                "Indexed {} Charms spell(s) at block #{block_height}",
+                charms_list.len()
+            );
+            for indexed in charms_list.iter().take(5) {
+                let spell = &indexed.spell;
+                let short_txid = if spell.txid.len() > 16 {
+                    &spell.txid[..16]
+                } else {
+                    spell.txid.as_str()
+                };
+                try_info!(
+                    ctx,
+                    "Charms spell: op={} tag={} identity={} ticker={} tx={}#{}",
+                    spell.op,
+                    spell.tag,
+                    identity_hex(&spell.id),
+                    spell.ticker.as_deref().unwrap_or("-"),
+                    short_txid,
+                    spell.vout,
+                );
+            }
+
+            let webhook_urls = config.webhook_urls().to_vec();
+            if !webhook_urls.is_empty() {
+                for indexed in &charms_list {
+                    let spell = &indexed.spell;
+                    let payload = match spell.op.as_str() {
+                        "mint" => Some(webhooks::charms_mint_event(spell)),
+                        "transfer" => Some(webhooks::charms_transfer_event(spell)),
+                        "burn" => Some(webhooks::charms_burn_event(spell)),
+                        "beam_out" => Some(webhooks::charms_beam_out_event(spell)),
+                        "beam_in" => Some(webhooks::charms_beam_in_event(spell)),
+                        _ => None,
+                    };
+
+                    if let Some(payload) = payload {
+                        webhooks::fire_webhooks(
+                            webhook_urls.clone(),
+                            config.webhooks.hmac_secret.clone(),
+                            payload,
+                        );
+                    }
                 }
             }
         }
@@ -445,7 +563,10 @@ pub async fn index_block(
                 continue;
             }
 
-            if !crate::core::meta_protocols::lotto::validate_mint_against_deploy(&parsed.mint, &deploy) {
+            if !crate::core::meta_protocols::lotto::validate_mint_against_deploy(
+                &parsed.mint,
+                &deploy,
+            ) {
                 try_warn!(
                     ctx,
                     "Rejected doge-lotto mint {} ({}): seed numbers invalid for deploy config",
@@ -561,7 +682,11 @@ pub async fn index_block(
                     &ticket.seed_numbers,
                     ticket.tip_percent,
                 );
-                webhooks::fire_webhooks(webhook_urls.clone(), config.webhooks.hmac_secret.clone(), payload);
+                webhooks::fire_webhooks(
+                    webhook_urls.clone(),
+                    config.webhooks.hmac_secret.clone(),
+                    payload,
+                );
             }
             for winner in &resolved_lotto_winners {
                 let payload = webhooks::lotto_winner_event(
@@ -579,11 +704,19 @@ pub async fn index_block(
                     &winner.seed_numbers,
                     &winner.drawn_numbers,
                 );
-                webhooks::fire_webhooks(webhook_urls.clone(), config.webhooks.hmac_secret.clone(), payload);
+                webhooks::fire_webhooks(
+                    webhook_urls.clone(),
+                    config.webhooks.hmac_secret.clone(),
+                    payload,
+                );
             }
         }
 
-        if !lotto_deploy_map.is_empty() || !inserted_lotto_tickets.is_empty() || !resolved_lotto_winners.is_empty() || !burn_events.is_empty() {
+        if !lotto_deploy_map.is_empty()
+            || !inserted_lotto_tickets.is_empty()
+            || !resolved_lotto_winners.is_empty()
+            || !burn_events.is_empty()
+        {
             try_info!(
                 ctx,
                 "doge-lotto at block #{block_height}: {} deploy(s), {} ticket mint(s), {} winner record(s), {} burn(s)",
@@ -674,6 +807,7 @@ pub async fn rollback_block(
         doginals_pg::rollback_dns_names(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogemap_claims(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogetags(block_height, &ord_tx).await?;
+        doginals_pg::rollback_charms(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_resolutions(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_burns(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_tickets(block_height, &ord_tx).await?;
@@ -743,9 +877,13 @@ async fn detect_lotto_burns<T: deadpool_postgres::GenericClient>(
         let tx_id: String = row.get(2);
 
         // Get ticket info
-        if let Some(ticket_info) = doginals_pg::get_lotto_ticket_by_inscription(&inscription_id, client).await? {
+        if let Some(ticket_info) =
+            doginals_pg::get_lotto_ticket_by_inscription(&inscription_id, client).await?
+        {
             // Get lottery to check if resolved/expired
-            if let Some(lotto_full) = doginals_pg::get_lotto_lottery(&ticket_info.lotto_id, client).await? {
+            if let Some(lotto_full) =
+                doginals_pg::get_lotto_lottery(&ticket_info.lotto_id, client).await?
+            {
                 // Only allow burning tickets from resolved or expired lotteries
                 if lotto_full.summary.resolved || block_height > lotto_full.summary.draw_block {
                     // Get the previous owner (sender) from inscription_transfers

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bitcoin::ScriptBuf;
 use deadpool_postgres::GenericClient;
@@ -18,6 +18,7 @@ use super::models::{
     DbCurrentLocation, DbInscription, DbInscriptionParent, DbInscriptionRecursion, DbKoinu,
     DbLocation,
 };
+use crate::core::meta_protocols::charms::{identity_hex, IndexedCharmsSpell};
 use crate::core::meta_protocols::lotto::{
     classic_prize_bps, compute_ticket_fingerprint, count_classic_matches,
     derive_classic_drawn_numbers, derive_classic_numbers, derive_draw_for_deploy, score_ticket,
@@ -2279,9 +2280,14 @@ fn resolve_lottery_winners(
                 false,
             )
         }
-        ResolutionMode::ClosestFingerprint => {
-            resolve_closest_fingerprint_impl(lottery, tickets, resolved_height, net_prize_koinu, draw, block_hash)
-        }
+        ResolutionMode::ClosestFingerprint => resolve_closest_fingerprint_impl(
+            lottery,
+            tickets,
+            resolved_height,
+            net_prize_koinu,
+            draw,
+            block_hash,
+        ),
     }
 }
 
@@ -2342,7 +2348,11 @@ fn resolve_closest_fingerprint_impl(
             fp.copy_from_slice(&fp_bytes_vec);
             let distance = u256_abs_diff(&fp, &draw_target);
             let classic_matches = count_classic_matches(&t.classic_numbers, &classic_drawn);
-            Some(FpTicket { ticket: t, distance, classic_matches })
+            Some(FpTicket {
+                ticket: t,
+                distance,
+                classic_matches,
+            })
         })
         .collect();
 
@@ -3127,6 +3137,219 @@ pub async fn count_dogetags<T: GenericClient>(client: &T) -> Result<i64, String>
         .await
         .map_err(|e| format!("count_dogetags: {e}"))?;
     Ok(row.get(0))
+}
+
+// ---------------------------------------------------------------------------
+// Charms - OP_RETURN spell indexing
+// ---------------------------------------------------------------------------
+
+pub async fn insert_charms_spells<T: GenericClient>(
+    spells: &[IndexedCharmsSpell],
+    client: &T,
+) -> Result<(), String> {
+    let mut affected_tickers = HashSet::new();
+    let mut affected_nfts = HashSet::new();
+
+    for indexed in spells {
+        let spell = &indexed.spell;
+        let identity = identity_hex(&spell.id);
+        let amount = spell.amount.map(PgNumericU64);
+        let decimals = spell.decimals.map(i16::from);
+        let vout = PgBigIntU32(spell.vout);
+        let block_height = PgNumericU64(spell.block_height);
+
+        client
+            .execute(
+                "INSERT INTO charms_spells
+                    (txid, vout, block_height, block_timestamp, version, tag, op, identity,
+                     chain_id, ticker, name, amount, decimals, from_addr, to_addr, beam_to,
+                     beam_proof, raw_cbor)
+                 VALUES
+                    ($1, $2, $3, $4, $5, $6, $7, $8,
+                     $9, $10, $11, $12, $13, $14, $15, $16,
+                     $17, $18)
+                 ON CONFLICT (txid, vout) DO NOTHING",
+                &[
+                    &spell.txid,
+                    &vout,
+                    &block_height,
+                    &(spell.block_timestamp as i64),
+                    &spell.version,
+                    &spell.tag,
+                    &spell.op,
+                    &identity,
+                    &spell.chain_id,
+                    &spell.ticker,
+                    &spell.name,
+                    &amount,
+                    &decimals,
+                    &spell.from,
+                    &spell.to,
+                    &spell.beam_to,
+                    &spell.beam_proof,
+                    &indexed.raw_cbor,
+                ],
+            )
+            .await
+            .map_err(|e| format!("insert_charms_spells: {e}"))?;
+
+        if let Some(ticker) = spell.ticker.clone() {
+            affected_tickers.insert(ticker);
+        }
+        if spell.tag == "n" {
+            affected_nfts.insert(identity);
+        }
+    }
+
+    for ticker in affected_tickers {
+        rebuild_charms_balances_for_ticker(&ticker, client).await?;
+    }
+
+    for identity in affected_nfts {
+        rebuild_charms_nft(&identity, client).await?;
+    }
+
+    Ok(())
+}
+
+pub async fn rollback_charms<T: GenericClient>(
+    block_height: u64,
+    client: &T,
+) -> Result<(), String> {
+    let height = PgNumericU64(block_height);
+    let rows = client
+        .query(
+            "SELECT ticker, identity, tag
+             FROM charms_spells
+             WHERE block_height = $1::numeric",
+            &[&height],
+        )
+        .await
+        .map_err(|e| format!("rollback_charms (select affected state): {e}"))?;
+
+    let mut affected_tickers = HashSet::new();
+    let mut affected_nfts = HashSet::new();
+
+    for row in rows {
+        let ticker: Option<String> = row.get(0);
+        let identity: String = row.get(1);
+        let tag: String = row.get(2);
+
+        if let Some(ticker) = ticker {
+            affected_tickers.insert(ticker);
+        }
+        if tag == "n" {
+            affected_nfts.insert(identity);
+        }
+    }
+
+    client
+        .execute(
+            "DELETE FROM charms_spells WHERE block_height = $1::numeric",
+            &[&height],
+        )
+        .await
+        .map_err(|e| format!("rollback_charms (delete spells): {e}"))?;
+
+    for ticker in affected_tickers {
+        rebuild_charms_balances_for_ticker(&ticker, client).await?;
+    }
+
+    for identity in affected_nfts {
+        rebuild_charms_nft(&identity, client).await?;
+    }
+
+    Ok(())
+}
+
+async fn rebuild_charms_balances_for_ticker<T: GenericClient>(
+    ticker: &str,
+    client: &T,
+) -> Result<(), String> {
+    client
+        .execute("DELETE FROM charms_balances WHERE ticker = $1", &[&ticker])
+        .await
+        .map_err(|e| format!("rebuild_charms_balances_for_ticker (delete): {e}"))?;
+
+    client
+        .execute(
+            "INSERT INTO charms_balances (ticker, address, balance)
+             SELECT ticker, address, SUM(delta) AS balance
+             FROM (
+                 SELECT ticker,
+                        CASE
+                            WHEN op IN ('mint', 'beam_in') THEN COALESCE(to_addr, from_addr)
+                            WHEN op = 'transfer' THEN to_addr
+                            ELSE NULL
+                        END AS address,
+                        amount::numeric AS delta
+                 FROM charms_spells
+                 WHERE ticker = $1
+                   AND amount IS NOT NULL
+                   AND op IN ('mint', 'transfer', 'beam_in')
+                 UNION ALL
+                 SELECT ticker,
+                        from_addr AS address,
+                        -amount::numeric AS delta
+                 FROM charms_spells
+                 WHERE ticker = $1
+                   AND amount IS NOT NULL
+                   AND op IN ('transfer', 'burn', 'beam_out')
+             ) ledger
+             WHERE address IS NOT NULL
+             GROUP BY ticker, address
+             HAVING SUM(delta) <> 0",
+            &[&ticker],
+        )
+        .await
+        .map_err(|e| format!("rebuild_charms_balances_for_ticker (insert): {e}"))?;
+
+    Ok(())
+}
+
+async fn rebuild_charms_nft<T: GenericClient>(identity: &str, client: &T) -> Result<(), String> {
+    client
+        .execute("DELETE FROM charms_nfts WHERE identity = $1", &[&identity])
+        .await
+        .map_err(|e| format!("rebuild_charms_nft (delete): {e}"))?;
+
+    client
+        .execute(
+            "INSERT INTO charms_nfts (identity, ticker, metadata_json)
+             SELECT identity,
+                    ticker,
+                    jsonb_strip_nulls(
+                        jsonb_build_object(
+                            'version', version,
+                            'tag', tag,
+                            'op', op,
+                            'id', identity,
+                            'chain_id', chain_id,
+                            'ticker', ticker,
+                            'name', name,
+                            'amount', amount,
+                            'decimals', decimals,
+                            'from', from_addr,
+                            'to', to_addr,
+                            'beam_to', beam_to,
+                            'beam_proof', beam_proof,
+                            'txid', txid,
+                            'vout', vout,
+                            'block_height', block_height,
+                            'block_timestamp', block_timestamp
+                        )
+                    )
+             FROM charms_spells
+             WHERE identity = $1
+               AND tag = 'n'
+             ORDER BY block_height DESC, id DESC
+             LIMIT 1",
+            &[&identity],
+        )
+        .await
+        .map_err(|e| format!("rebuild_charms_nft (insert): {e}"))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

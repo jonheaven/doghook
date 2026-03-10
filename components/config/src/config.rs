@@ -108,6 +108,7 @@ pub struct ProtocolsConfig {
     pub dogemap: DogemapProtocolConfig,
     pub lotto: LottoProtocolConfig,
     pub dogetag: DogetagProtocolConfig,
+    pub charms: CharmsProtocolConfig,
 }
 
 impl Default for ProtocolsConfig {
@@ -122,6 +123,7 @@ impl Default for ProtocolsConfig {
                 protocol_dev_address: String::new(),
             },
             dogetag: DogetagProtocolConfig { enabled: true },
+            charms: CharmsProtocolConfig { enabled: true },
         }
     }
 }
@@ -146,6 +148,11 @@ pub struct DogemapProtocolConfig {
 
 #[derive(Clone, Debug)]
 pub struct DogetagProtocolConfig {
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct CharmsProtocolConfig {
     pub enabled: bool,
 }
 
@@ -358,6 +365,10 @@ impl Config {
 
     pub fn dogetag_enabled(&self) -> bool {
         self.protocols.dogetag.enabled
+    }
+
+    pub fn charms_enabled(&self) -> bool {
+        self.protocols.charms.enabled
     }
 
     pub fn doginals_predicates(&self) -> Option<&DoginalsPredicatesConfig> {

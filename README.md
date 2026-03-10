@@ -29,6 +29,7 @@ Both projects are completely independent codebases. doghook does not import dog.
 | Dogemap (block claims) | Full — first-wins, reorg-safe | `doghook dogemap status`, `doghook dogemap list` |
 | doge-lotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `doghook lotto deploy`, `doghook lotto mint`, `doghook lotto list`, `doghook lotto status`, `doghook lotto burn`, `doghook lotto burners` |
 | Dogetag (on-chain graffiti) | Full — OP_RETURN text messages, reorg-safe | `doghook dogetag list`, `doghook dogetag search`, `doghook dogetag address`, `doghook dogetag send` |
+| Charms | Full — OP_RETURN `CHARMS` + CBOR spells, balances, NFT metadata snapshots, reorg-safe | `doghook doginals index sync --only charms` plus `/charms/*` API routes |
 
 ### doge-lotto
 
@@ -236,6 +237,31 @@ doghook dogetag send \
 
 Dogetag indexing tracks OP_RETURN UTF-8 graffiti messages from standard Dogecoin transactions and exposes them through CLI queries, web APIs, and webhooks.
 
+### Charms — OP_RETURN CBOR Spells
+
+Charms spells are **not inscriptions**. doghook scans every OP_RETURN output, looks for the ASCII magic prefix `CHARMS`, decodes the trailing CBOR spell, and indexes only spells whose `chain_id` is `doge`.
+
+Enable in config (default `true` when section is absent):
+
+```toml
+[protocols.charms]
+enabled = true
+```
+
+Run a dedicated Charms-only sync:
+
+```bash
+doghook doginals index sync --only charms --config-path doghook.toml
+```
+
+Web/API routes:
+
+```text
+GET /charms/balance/:ticker/:address
+GET /charms/history/:ticker/:address
+GET /charms/spells/:txid
+```
+
 ## Web Explorer
 
 Doghook includes a lightweight built-in explorer + JSON API server.
@@ -271,6 +297,9 @@ doghook doginals service start --config-path doghook.toml
 - `GET /api/dns/names`
 - `GET /api/dogemap/claims`
 - `GET /api/dogetags`
+- `GET /charms/balance/:ticker/:address`
+- `GET /charms/history/:ticker/:address`
+- `GET /charms/spells/:txid`
 - HTML pages: `/`, `/inscriptions`, `/drc20`, `/dunes`, `/lotto`
 
 The bundled HTML currently focuses on lotto flows (tickets, QR, burn actions).
@@ -561,6 +590,14 @@ docker run -d \
   -v /path/to/doghook.toml:/etc/doghook.toml \
   -p 8080:8080 \
   doghook
+```
+
+Charms migrations run automatically on startup. Once the indexer is live, query:
+
+```text
+/charms/balance/<ticker>/<address>
+/charms/history/<ticker>/<address>
+/charms/spells/<txid>
 ```
 
 ### 2. systemd service (bare-metal)

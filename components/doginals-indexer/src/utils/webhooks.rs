@@ -6,6 +6,8 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::sync::OnceLock;
 
+use crate::core::meta_protocols::charms::{identity_hex, CharmsSpell};
+
 type HmacSha256 = Hmac<Sha256>;
 
 // Shared client so all webhook tasks reuse the same connection pool.
@@ -84,10 +86,7 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
         payload["_id"] = serde_json::Value::String(hex::encode(id_bytes));
 
         // Extract event type for the X-Doghook-Event header.
-        let event_type = payload["event"]
-            .as_str()
-            .unwrap_or("unknown")
-            .to_string();
+        let event_type = payload["event"].as_str().unwrap_or("unknown").to_string();
 
         let body = payload.to_string();
 
@@ -123,7 +122,9 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
                     }
                     Err(e) => {
                         if attempts >= 4 {
-                            eprintln!("[doghook] webhook {url} gave up after {attempts} retries: {e}");
+                            eprintln!(
+                                "[doghook] webhook {url} gave up after {attempts} retries: {e}"
+                            );
                             webhook_failure().inc();
                             break;
                         }
@@ -243,4 +244,54 @@ pub fn lotto_winner_event(
         "seed_numbers": seed_numbers,
         "drawn_numbers": drawn_numbers,
     })
+}
+
+fn charms_spell_json(spell: &CharmsSpell) -> Value {
+    serde_json::json!({
+        "version": spell.version.as_str(),
+        "tag": spell.tag.as_str(),
+        "op": spell.op.as_str(),
+        "id": identity_hex(&spell.id),
+        "chain_id": spell.chain_id.as_str(),
+        "ticker": &spell.ticker,
+        "name": &spell.name,
+        "amount": spell.amount,
+        "decimals": spell.decimals,
+        "from": &spell.from,
+        "to": &spell.to,
+        "beam_to": &spell.beam_to,
+        "beam_proof": &spell.beam_proof,
+        "txid": spell.txid.as_str(),
+        "vout": spell.vout,
+        "block_height": spell.block_height,
+        "block_timestamp": spell.block_timestamp,
+    })
+}
+
+fn charms_event(event: &str, spell: &CharmsSpell) -> Value {
+    let mut payload = charms_spell_json(spell);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("event".to_string(), Value::String(event.to_string()));
+    }
+    payload
+}
+
+pub fn charms_mint_event(spell: &CharmsSpell) -> Value {
+    charms_event("charms.mint", spell)
+}
+
+pub fn charms_transfer_event(spell: &CharmsSpell) -> Value {
+    charms_event("charms.transfer", spell)
+}
+
+pub fn charms_burn_event(spell: &CharmsSpell) -> Value {
+    charms_event("charms.burn", spell)
+}
+
+pub fn charms_beam_out_event(spell: &CharmsSpell) -> Value {
+    charms_event("charms.beam_out", spell)
+}
+
+pub fn charms_beam_in_event(spell: &CharmsSpell) -> Value {
+    charms_event("charms.beam_in", spell)
 }

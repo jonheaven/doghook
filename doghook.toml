@@ -73,6 +73,12 @@ enabled = true
 [protocols.dogetag]
 enabled = true
 
+# Charms protocol. OP_RETURN payload must start with "CHARMS" and decode as CBOR.
+# Set enabled = false to skip Charms spell indexing entirely.
+# For a one-off dedicated Charms sync: `doghook doginals index sync --only charms --config-path doghook.toml`
+[protocols.charms]
+enabled = true
+
 # doge-lotto meta-protocol. Inscriptions with "p":"doge-lotto" are indexed.
 # Set enabled = false to skip all lotto events.
 [protocols.lotto]

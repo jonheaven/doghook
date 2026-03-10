@@ -1,3 +1,4 @@
+pub mod charms;
 pub mod dns;
 pub mod dogemap;
 pub mod dogetag;

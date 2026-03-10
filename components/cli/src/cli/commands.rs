@@ -410,6 +410,9 @@ pub enum ServiceCommand {
 pub struct ServiceStartCommand {
     #[clap(long = "config-path")]
     pub config_path: String,
+    /// Index only one non-inscription metaprotocol processor for this run.
+    #[clap(long, value_name = "PROTOCOL")]
+    pub only: Option<String>,
 }
 
 #[derive(Subcommand, PartialEq, Clone, Debug)]
@@ -437,6 +440,9 @@ pub enum IndexCommand {
 pub struct SyncIndexCommand {
     #[clap(long = "config-path")]
     pub config_path: String,
+    /// Index only one non-inscription metaprotocol processor for this run.
+    #[clap(long, value_name = "PROTOCOL")]
+    pub only: Option<String>,
     /// Start syncing from this block height (overrides start_block in config).
     #[clap(long, value_name = "HEIGHT")]
     pub from: Option<u64>,

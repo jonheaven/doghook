@@ -13,9 +13,11 @@ use clap::Parser;
 use commands::{
     Command, ConfigCommand, DatabaseCommand, DnsCommand, DogemapCommand, DogetagCommand,
     DogetagSendCommand, IndexCommand, LottoCommand, Protocol, RefreshBlkIndexCommand,
-    ServiceCommand, ScanIndexCommand,
+    ScanIndexCommand, ServiceCommand,
 };
-use config::{generator::generate_toml_config, Config, DogecoinDataSource};
+use config::{
+    generator::generate_toml_config, Config, DogecoinDataSource, DoginalsPredicatesConfig,
+};
 use dogecoin::bitcoincore_rpc::{
     bitcoin::{
         self, absolute::LockTime, hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, Transaction,
@@ -31,6 +33,7 @@ use postgres::pg_pool;
 mod commands;
 
 const DEFAULT_LOTTO_FEE_RATE: f64 = 1.0;
+const ONLY_PREDICATE_SENTINEL_MIME: &str = "application/x-doghook-never-index";
 
 pub fn main() {
     let logger = hiro_system_kit::log::setup_logger();
@@ -55,10 +58,7 @@ pub fn main() {
     }
 }
 
-fn run_refresh_blk_index(
-    cmd: &RefreshBlkIndexCommand,
-    ctx: &Context,
-) -> Result<(), String> {
+fn run_refresh_blk_index(cmd: &RefreshBlkIndexCommand, ctx: &Context) -> Result<(), String> {
     use dogecoin::blk_reader::refresh_index_copy;
 
     let config = Config::from_file_path(&cmd.config_path)?;
@@ -81,7 +81,12 @@ fn run_refresh_blk_index(
     println!("  Source: {}", live_index.display());
     println!("  Dest:   {}", copy_dir.display());
 
-    try_info!(ctx, "Refreshing blk index: {} → {}", live_index.display(), copy_dir.display());
+    try_info!(
+        ctx,
+        "Refreshing blk index: {} → {}",
+        live_index.display(),
+        copy_dir.display()
+    );
     let (copied, skipped) = refresh_index_copy(&live_index, &copy_dir)?;
 
     println!("Done: {copied} file(s) updated, {skipped} already up-to-date.");
@@ -101,12 +106,15 @@ async fn run_doginals_scan(
 ) -> Result<(), String> {
     use doginals_indexer::{scan_doginals, ScanOptions};
     use std::fs::File;
-    use std::io::{BufWriter, stdout};
+    use std::io::{stdout, BufWriter};
 
     let config = Config::from_file_path(&cmd.config_path)?;
 
     if cmd.from > cmd.to {
-        return Err(format!("--from ({}) must be <= --to ({})", cmd.from, cmd.to));
+        return Err(format!(
+            "--from ({}) must be <= --to ({})",
+            cmd.from, cmd.to
+        ));
     }
 
     // --predicate overrides --content-type when both are given.
@@ -134,7 +142,10 @@ async fn run_doginals_scan(
         cmd.from,
         cmd.to,
         cmd.reveals_only.then_some(" (reveals only)").unwrap_or(""),
-        cmd.content_type.as_deref().map(|p| format!(" [content-type: {p}]")).unwrap_or_default()
+        cmd.content_type
+            .as_deref()
+            .map(|p| format!(" [content-type: {p}]"))
+            .unwrap_or_default()
     );
 
     let count = if let Some(out_path) = &cmd.out {
@@ -150,7 +161,10 @@ async fn run_doginals_scan(
         scan_doginals(cmd.from, cmd.to, opts, writer, abort_signal, &config, ctx).await?
     };
 
-    eprintln!("Scan complete: {count} inscription event(s) in blocks {}..{}.", cmd.from, cmd.to);
+    eprintln!(
+        "Scan complete: {count} inscription event(s) in blocks {}..{}.",
+        cmd.from, cmd.to
+    );
     Ok(())
 }
 
@@ -206,6 +220,60 @@ fn parse_blk_range(s: &str) -> Result<(u64, u64), String> {
     Ok((start, end))
 }
 
+fn apply_only_protocol_selection(
+    config: &mut Config,
+    only: Option<&str>,
+    ctx: &Context,
+) -> Result<(), String> {
+    let Some(only) = only else {
+        return Ok(());
+    };
+
+    let only = only.trim().to_ascii_lowercase();
+
+    config.protocols.dns.enabled = false;
+    config.protocols.dogemap.enabled = false;
+    config.protocols.dogetag.enabled = false;
+    config.protocols.lotto.enabled = false;
+    config.protocols.charms.enabled = false;
+
+    if let Some(doginals) = config.doginals.as_mut() {
+        doginals.predicates = Some(DoginalsPredicatesConfig {
+            enabled: true,
+            mime_types: vec![ONLY_PREDICATE_SENTINEL_MIME.to_string()],
+            content_prefixes: vec![],
+        });
+
+        if let Some(meta_protocols) = doginals.meta_protocols.as_mut() {
+            if let Some(drc20) = meta_protocols.drc20.as_mut() {
+                drc20.enabled = false;
+            }
+        }
+    }
+
+    match only.as_str() {
+        "dns" => config.protocols.dns.enabled = true,
+        "dogemap" => config.protocols.dogemap.enabled = true,
+        "dogetag" => config.protocols.dogetag.enabled = true,
+        "lotto" => config.protocols.lotto.enabled = true,
+        "charms" => config.protocols.charms.enabled = true,
+        other => {
+            return Err(format!(
+                "unsupported --only value '{}' (expected one of: dns, dogemap, dogetag, lotto, charms)",
+                other
+            ));
+        }
+    }
+
+    try_info!(
+        ctx,
+        "--only {}: indexing only that metaprotocol and skipping inscription storage for this run",
+        only
+    );
+
+    Ok(())
+}
+
 async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
     // Set up the interrupt signal handler.
     let abort_signal = Arc::new(AtomicBool::new(false));
@@ -227,28 +295,35 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                     check_maintenance_mode(ctx);
                     let mut config = Config::from_file_path(&cmd.config_path)?;
                     config.assert_doginals_config()?;
+                    apply_only_protocol_selection(&mut config, cmd.only.as_deref(), ctx)?;
 
                     // Start web explorer if enabled
                     let web_enabled = config.web.as_ref().map(|w| w.enabled).unwrap_or(false);
-                    let web_port    = config.web.as_ref().map(|w| w.port).unwrap_or(8080);
+                    let web_port = config.web.as_ref().map(|w| w.port).unwrap_or(8080);
                     if web_enabled {
                         let doginals_config = config.doginals.as_ref().unwrap();
-                        let doginals_pool = Arc::new(pg_pool(&doginals_config.db)
-                            .map_err(|e| format!("Failed to create doginals pool: {}", e))?);
+                        let doginals_pool = Arc::new(
+                            pg_pool(&doginals_config.db)
+                                .map_err(|e| format!("Failed to create doginals pool: {}", e))?,
+                        );
 
-                        let drc20_pool = config.ordinals_drc20_config()
+                        let drc20_pool = config
+                            .ordinals_drc20_config()
                             .map(|drc20| pg_pool(&drc20.db))
                             .transpose()
                             .map_err(|e| format!("Failed to create DRCC-20 pool: {}", e))?
                             .map(Arc::new);
 
-                        let dunes_pool = config.dunes.as_ref()
+                        let dunes_pool = config
+                            .dunes
+                            .as_ref()
                             .map(|dunes| pg_pool(&dunes.db))
                             .transpose()
                             .map_err(|e| format!("Failed to create Dunes pool: {}", e))?
                             .map(Arc::new);
 
-                        let web_addr = format!("0.0.0.0:{}", web_port).parse()
+                        let web_addr = format!("0.0.0.0:{}", web_port)
+                            .parse()
                             .map_err(|e| format!("Invalid web server address: {}", e))?;
                         let burn_address = config.protocols.lotto.burn_address.clone();
 
@@ -268,7 +343,9 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                                 dunes_pool,
                                 burn_address,
                                 dogecoin_config,
-                            ).await {
+                            )
+                            .await
+                            {
                                 eprintln!("Web server error: {}", e);
                             }
                         });
@@ -282,6 +359,7 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                 IndexCommand::Sync(cmd) => {
                     let mut config = Config::from_file_path(&cmd.config_path)?;
                     config.assert_doginals_config()?;
+                    apply_only_protocol_selection(&mut config, cmd.only.as_deref(), ctx)?;
                     if let Some(from) = cmd.from {
                         config.start_block = Some(from);
                     }
@@ -1284,12 +1362,13 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
             let raw_hex = rpc
                 .get_raw_transaction_hex(&txid, None)
                 .map_err(|e| format!("getrawtransaction {}: {}", txid_str, e))?;
-            let raw_bytes = hex::decode(&raw_hex)
-                .map_err(|e| format!("hex decode error: {}", e))?;
+            let raw_bytes =
+                hex::decode(&raw_hex).map_err(|e| format!("hex decode error: {}", e))?;
             let doge_tx: ::bitcoin::Transaction = ::bitcoin::consensus::deserialize(&raw_bytes)
                 .map_err(|e| format!("tx deserialize error: {}", e))?;
 
-            let envelopes = doginals::envelope::ParsedEnvelope::from_transactions_dogecoin(&[doge_tx]);
+            let envelopes =
+                doginals::envelope::ParsedEnvelope::from_transactions_dogecoin(&[doge_tx]);
 
             if envelopes.is_empty() {
                 if cmd.json {
