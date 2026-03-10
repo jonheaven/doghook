@@ -2,11 +2,11 @@ version: '3.9'
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     environment:
       POSTGRES_DB: doginals
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -26,7 +26,7 @@ services:
       # RPC credentials — override here or in doghook.toml
       DOGE_RPC_USERNAME: ${DOGE_RPC_USERNAME:-doge}
       DOGE_RPC_PASSWORD: ${DOGE_RPC_PASSWORD:-doge}
-      # Optional: HMAC signing secret for webhook receivers
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       WEBHOOK_HMAC_SECRET: ${WEBHOOK_HMAC_SECRET:-}
     ports:
       - "8080:8080"
