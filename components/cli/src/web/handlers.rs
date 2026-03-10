@@ -107,14 +107,14 @@ pub struct DogetagEntry {
 }
 
 #[derive(Serialize)]
-pub struct CharmsBalanceEntry {
+pub struct DogeSpellsBalanceEntry {
     pub ticker: String,
     pub address: String,
     pub balance: String,
 }
 
 #[derive(Serialize)]
-pub struct CharmsSpellEntry {
+pub struct DogeSpellsSpellEntry {
     pub txid: String,
     pub vout: u32,
     pub block_height: u64,
@@ -620,10 +620,10 @@ pub async fn get_dogetags(
     Ok(Json(tags))
 }
 
-pub async fn get_charms_balance(
+pub async fn get_dogespells_balance(
     State(state): State<AppState>,
     Path((ticker, address)): Path<(String, String)>,
-) -> Result<Json<CharmsBalanceEntry>, StatusCode> {
+) -> Result<Json<DogeSpellsBalanceEntry>, StatusCode> {
     let client = state
         .doginals_pool
         .get()
@@ -633,7 +633,7 @@ pub async fn get_charms_balance(
     let balance = client
         .query_opt(
             "SELECT balance::text
-             FROM charms_balances
+             FROM dogespells_balances
              WHERE ticker = $1 AND address = $2",
             &[&ticker, &address],
         )
@@ -642,17 +642,17 @@ pub async fn get_charms_balance(
         .map(|row| row.get::<_, String>(0))
         .unwrap_or_else(|| "0".to_string());
 
-    Ok(Json(CharmsBalanceEntry {
+    Ok(Json(DogeSpellsBalanceEntry {
         ticker,
         address,
         balance,
     }))
 }
 
-pub async fn get_charms_history(
+pub async fn get_dogespells_history(
     State(state): State<AppState>,
     Path((ticker, address)): Path<(String, String)>,
-) -> Result<Json<Vec<CharmsSpellEntry>>, StatusCode> {
+) -> Result<Json<Vec<DogeSpellsSpellEntry>>, StatusCode> {
     let client = state
         .doginals_pool
         .get()
@@ -664,7 +664,7 @@ pub async fn get_charms_history(
             "SELECT txid, vout, block_height::bigint, block_timestamp, version, tag, op,
                     identity, chain_id, ticker, name, amount::text, decimals::int,
                     from_addr, to_addr, beam_to, beam_proof, raw_cbor
-             FROM charms_spells
+             FROM dogespells
              WHERE ticker = $1
                AND (from_addr = $2 OR to_addr = $2)
              ORDER BY block_height DESC, id DESC",
@@ -673,9 +673,9 @@ pub async fn get_charms_history(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let spells: Vec<CharmsSpellEntry> = rows
+    let spells: Vec<DogeSpellsSpellEntry> = rows
         .iter()
-        .map(|row| CharmsSpellEntry {
+        .map(|row| DogeSpellsSpellEntry {
             txid: row.get(0),
             vout: row.get::<_, i64>(1) as u32,
             block_height: row.get::<_, i64>(2) as u64,
@@ -702,10 +702,10 @@ pub async fn get_charms_history(
     Ok(Json(spells))
 }
 
-pub async fn get_charms_spells(
+pub async fn get_dogespells_spells(
     State(state): State<AppState>,
     Path(txid): Path<String>,
-) -> Result<Json<Vec<CharmsSpellEntry>>, StatusCode> {
+) -> Result<Json<Vec<DogeSpellsSpellEntry>>, StatusCode> {
     let client = state
         .doginals_pool
         .get()
@@ -717,7 +717,7 @@ pub async fn get_charms_spells(
             "SELECT txid, vout, block_height::bigint, block_timestamp, version, tag, op,
                     identity, chain_id, ticker, name, amount::text, decimals::int,
                     from_addr, to_addr, beam_to, beam_proof, raw_cbor
-             FROM charms_spells
+             FROM dogespells
              WHERE LOWER(txid) = LOWER($1)
              ORDER BY vout ASC, id ASC",
             &[&txid],
@@ -725,9 +725,9 @@ pub async fn get_charms_spells(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let spells: Vec<CharmsSpellEntry> = rows
+    let spells: Vec<DogeSpellsSpellEntry> = rows
         .iter()
-        .map(|row| CharmsSpellEntry {
+        .map(|row| DogeSpellsSpellEntry {
             txid: row.get(0),
             vout: row.get::<_, i64>(1) as u32,
             block_height: row.get::<_, i64>(2) as u64,
@@ -930,7 +930,7 @@ pub async fn sse_events(
 
 /// POST /api/webhook — receives indexer webhook payloads and fans them out to SSE subscribers.
 ///
-/// doghook automatically registers http://127.0.0.1:{port}/api/webhook as a webhook
+/// kabosu automatically registers http://127.0.0.1:{port}/api/webhook as a webhook
 /// URL at startup, so no manual config is needed.
 pub async fn receive_webhook(State(state): State<super::AppState>, body: String) -> StatusCode {
     // Ignore send errors — they just mean no SSE clients are connected right now.
@@ -963,3 +963,4 @@ pub async fn dunes_page() -> Html<&'static str> {
 pub async fn lotto_page() -> Html<&'static str> {
     Html(include_str!("../../static/index.html"))
 }
+

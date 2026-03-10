@@ -32,7 +32,7 @@ pub struct DbInscription {
     pub metaprotocol: Option<String>,
     pub delegate: Option<String>,
     pub timestamp: PgBigIntU32,
-    pub charms: PgBigIntU32,
+    pub dogespells: PgBigIntU32,
     pub unbound_sequence: Option<i64>,
 }
 
@@ -84,7 +84,7 @@ impl DbInscription {
             metaprotocol: reveal.metaprotocol.clone(),
             delegate: reveal.delegate.clone(),
             timestamp: PgBigIntU32(timestamp),
-            charms: PgBigIntU32(reveal.charms as u32),
+            dogespells: PgBigIntU32(reveal.dogespells as u32),
             unbound_sequence: reveal.unbound_sequence,
         }
     }
@@ -115,7 +115,7 @@ impl FromPgRow for DbInscription {
             metaprotocol: row.get("metaprotocol"),
             delegate: row.get("delegate"),
             timestamp: row.get("timestamp"),
-            charms: row.get("charms"),
+            dogespells: row.get("dogespells"),
             unbound_sequence: row.get("unbound_sequence"),
         }
     }

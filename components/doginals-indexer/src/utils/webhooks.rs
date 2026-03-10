@@ -6,7 +6,7 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::sync::OnceLock;
 
-use crate::core::meta_protocols::charms::{identity_hex, CharmsSpell};
+use crate::core::meta_protocols::dogespells::{identity_hex, DogeSpellsSpell};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -30,7 +30,7 @@ static WEBHOOK_RETRIES: OnceLock<IntCounter> = OnceLock::new();
 fn webhook_success() -> &'static IntCounter {
     WEBHOOK_SUCCESS.get_or_init(|| {
         register_int_counter!(
-            "doghook_webhook_deliveries_total",
+            "kabosu_webhook_deliveries_total",
             "Successful webhook deliveries"
         )
         .unwrap()
@@ -40,7 +40,7 @@ fn webhook_success() -> &'static IntCounter {
 fn webhook_failure() -> &'static IntCounter {
     WEBHOOK_FAILURE.get_or_init(|| {
         register_int_counter!(
-            "doghook_webhook_failures_total",
+            "kabosu_webhook_failures_total",
             "Webhook deliveries that exhausted all retries"
         )
         .unwrap()
@@ -48,12 +48,12 @@ fn webhook_failure() -> &'static IntCounter {
 }
 
 /// Incremented each time a delivery is retried (i.e. first attempt failed).
-/// rate(doghook_webhook_retries_total[5m]) > 0 → receiver is flaky.
+/// rate(kabosu_webhook_retries_total[5m]) > 0 → receiver is flaky.
 /// retries_total / deliveries_total → average retries per successful delivery.
 fn webhook_retries() -> &'static IntCounter {
     WEBHOOK_RETRIES.get_or_init(|| {
         register_int_counter!(
-            "doghook_webhook_retries_total",
+            "kabosu_webhook_retries_total",
             "Individual webhook retry attempts (excludes first attempt)"
         )
         .unwrap()
@@ -64,11 +64,11 @@ fn webhook_retries() -> &'static IntCounter {
 /// exponential-backoff retries. Returns immediately — never blocks the indexer.
 ///
 /// Each delivery includes:
-///   `X-Doghook-Event: <event type from payload["event"]>`
+///   `X-Kabosu-Event: <event type from payload["event"]>`
 ///   `_id: <16-byte random hex>` field stamped into the payload for deduplication
 ///
 /// If `hmac_secret` is `Some`, each request also includes:
-///   `X-Doghook-Signature: sha256=<hex(HMAC-SHA256(secret, body))>`
+///   `X-Kabosu-Signature: sha256=<hex(HMAC-SHA256(secret, body))>`
 ///
 /// Attempts: up to 5, with delays of 2 s / 4 s / 8 s / 16 s / 32 s.
 /// Delivery failures are printed to stderr — they never block indexing.
@@ -85,7 +85,7 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
         rand::rng().fill_bytes(&mut id_bytes);
         payload["_id"] = serde_json::Value::String(hex::encode(id_bytes));
 
-        // Extract event type for the X-Doghook-Event header.
+        // Extract event type for the X-Kabosu-Event header.
         let event_type = payload["event"].as_str().unwrap_or("unknown").to_string();
 
         let body = payload.to_string();
@@ -103,10 +103,10 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
                 let mut builder = client
                     .post(url)
                     .header("Content-Type", "application/json")
-                    .header("X-Doghook-Event", &event_type)
+                    .header("X-Kabosu-Event", &event_type)
                     .body(body.clone());
                 if let Some(ref s) = sig {
-                    builder = builder.header("X-Doghook-Signature", s);
+                    builder = builder.header("X-Kabosu-Signature", s);
                 }
                 match builder.send().await {
                     Ok(r) if r.status().is_success() => {
@@ -115,7 +115,7 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
                     }
                     Ok(r) => {
                         if attempts >= 4 {
-                            eprintln!("[doghook] webhook {url} gave up after {attempts} retries (status {})", r.status());
+                            eprintln!("[kabosu] webhook {url} gave up after {attempts} retries (status {})", r.status());
                             webhook_failure().inc();
                             break;
                         }
@@ -123,7 +123,7 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
                     Err(e) => {
                         if attempts >= 4 {
                             eprintln!(
-                                "[doghook] webhook {url} gave up after {attempts} retries: {e}"
+                                "[kabosu] webhook {url} gave up after {attempts} retries: {e}"
                             );
                             webhook_failure().inc();
                             break;
@@ -246,7 +246,7 @@ pub fn lotto_winner_event(
     })
 }
 
-fn charms_spell_json(spell: &CharmsSpell) -> Value {
+fn dogespells_spell_json(spell: &DogeSpellsSpell) -> Value {
     serde_json::json!({
         "version": spell.version.as_str(),
         "tag": spell.tag.as_str(),
@@ -268,30 +268,31 @@ fn charms_spell_json(spell: &CharmsSpell) -> Value {
     })
 }
 
-fn charms_event(event: &str, spell: &CharmsSpell) -> Value {
-    let mut payload = charms_spell_json(spell);
+fn dogespells_event(event: &str, spell: &DogeSpellsSpell) -> Value {
+    let mut payload = dogespells_spell_json(spell);
     if let Some(object) = payload.as_object_mut() {
         object.insert("event".to_string(), Value::String(event.to_string()));
     }
     payload
 }
 
-pub fn charms_mint_event(spell: &CharmsSpell) -> Value {
-    charms_event("charms.mint", spell)
+pub fn dogespells_mint_event(spell: &DogeSpellsSpell) -> Value {
+    dogespells_event("dogespells.mint", spell)
 }
 
-pub fn charms_transfer_event(spell: &CharmsSpell) -> Value {
-    charms_event("charms.transfer", spell)
+pub fn dogespells_transfer_event(spell: &DogeSpellsSpell) -> Value {
+    dogespells_event("dogespells.transfer", spell)
 }
 
-pub fn charms_burn_event(spell: &CharmsSpell) -> Value {
-    charms_event("charms.burn", spell)
+pub fn dogespells_burn_event(spell: &DogeSpellsSpell) -> Value {
+    dogespells_event("dogespells.burn", spell)
 }
 
-pub fn charms_beam_out_event(spell: &CharmsSpell) -> Value {
-    charms_event("charms.beam_out", spell)
+pub fn dogespells_beam_out_event(spell: &DogeSpellsSpell) -> Value {
+    dogespells_event("dogespells.beam_out", spell)
 }
 
-pub fn charms_beam_in_event(spell: &CharmsSpell) -> Value {
-    charms_event("charms.beam_in", spell)
+pub fn dogespells_beam_in_event(spell: &DogeSpellsSpell) -> Value {
+    dogespells_event("dogespells.beam_in", spell)
 }
+

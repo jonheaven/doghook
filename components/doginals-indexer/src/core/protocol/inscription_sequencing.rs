@@ -19,7 +19,7 @@ use crossbeam_channel::unbounded;
 use dashmap::DashMap;
 use deadpool_postgres::Transaction;
 use fxhash::FxHasher;
-use doginals::{charm::Charm, koinu::Koinu};
+use doginals::{dogespell::Dogespell, koinu::Koinu};
 
 use super::{
     koinu_numbering::{compute_koinu_number, TraversalResult},
@@ -525,7 +525,7 @@ async fn update_tx_inscriptions_with_consensus_sequence_data(
                     .pick_next(is_cursed, block_identifier.index, network, db_tx)
                     .await?;
                 curse_type_override = Some(OrdinalInscriptionCurseType::Reinscription);
-                Charm::Reinscription.set(&mut inscription.charms);
+                Dogespell::Reinscription.set(&mut inscription.dogespells);
             }
         };
 
@@ -542,12 +542,12 @@ async fn update_tx_inscriptions_with_consensus_sequence_data(
             None => inscription.curse_type.take(),
         };
 
-        inscription.charms |= Koinu(traversal.ordinal_number).charms();
+        inscription.dogespells |= Koinu(traversal.ordinal_number).dogespells();
         if is_cursed {
             if block_identifier.index >= get_jubilee_block_height(network) {
-                Charm::Vindicated.set(&mut inscription.charms);
+                Dogespell::Vindicated.set(&mut inscription.dogespells);
             } else {
-                Charm::Cursed.set(&mut inscription.charms);
+                Dogespell::Cursed.set(&mut inscription.dogespells);
             }
         }
 
@@ -566,17 +566,17 @@ async fn update_tx_inscriptions_with_consensus_sequence_data(
                 // spent to fees are numbered as if they appear last in the block in which they
                 // are revealed.
                 sats_overflows.push_back((tx_index, op_index));
-                Charm::Unbound.set(&mut inscription.charms);
+                Dogespell::Unbound.set(&mut inscription.dogespells);
                 continue;
             }
             OrdinalInscriptionTransferDestination::Burnt(_) => {
-                Charm::Burned.set(&mut inscription.charms);
+                Dogespell::Burned.set(&mut inscription.dogespells);
             }
             OrdinalInscriptionTransferDestination::Transferred(address) => {
                 inscription.inscription_output_value = output_value.unwrap_or(0);
                 inscription.inscriber_address = Some(address);
                 if output_value.is_none() {
-                    Charm::Lost.set(&mut inscription.charms);
+                    Dogespell::Lost.set(&mut inscription.dogespells);
                 }
             }
         };
@@ -614,7 +614,7 @@ mod test {
         },
         utils::Context,
     };
-    use doginals::charm::Charm;
+    use doginals::dogespell::Dogespell;
     use postgres::{pg_begin, pg_pool_client};
     use test_case::test_case;
 
@@ -734,7 +734,7 @@ mod test {
                                 transfers_pre_inscription: 0,
                                 koinupoint_post_inscription: "".into(),
                                 curse_type: Some(OrdinalInscriptionCurseType::DuplicateField),
-                                charms: 0,
+                                dogespells: 0,
                                 unbound_sequence: None,
                             },
                         ))
@@ -767,16 +767,16 @@ mod test {
     }
 
     #[test_case((884207, false, 1262349832364434, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![]); "common sat")]
-    #[test_case((884207, false, 0, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Charm::Coin, Charm::Mythic, Charm::Palindrome]); "mythic sat")]
-    #[test_case((884207, false, 1050000000000000, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Charm::Coin, Charm::Epic]); "epic sat")]
-    #[test_case((884207, false, 123454321, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Charm::Palindrome]); "palindrome sat")]
-    #[test_case((884207, false, 1262349832364434, "0x00".into()) => Ok(vec![Charm::Burned]); "burned inscription")]
-    #[test_case((780000, true, 1262349832364434, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Charm::Cursed]); "cursed inscription")]
-    #[test_case((884207, true, 1262349832364434, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Charm::Vindicated]); "vindicated inscription")]
+    #[test_case((884207, false, 0, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Dogespell::Coin, Dogespell::Mythic, Dogespell::Palindrome]); "mythic sat")]
+    #[test_case((884207, false, 1050000000000000, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Dogespell::Coin, Dogespell::Epic]); "epic sat")]
+    #[test_case((884207, false, 123454321, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Dogespell::Palindrome]); "palindrome sat")]
+    #[test_case((884207, false, 1262349832364434, "0x00".into()) => Ok(vec![Dogespell::Burned]); "burned inscription")]
+    #[test_case((780000, true, 1262349832364434, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Dogespell::Cursed]); "cursed inscription")]
+    #[test_case((884207, true, 1262349832364434, "0x5120694b38ea24908e86a857279105c376a82cd1556f51655abb2ebef398b57daa8b".into()) => Ok(vec![Dogespell::Vindicated]); "vindicated inscription")]
     #[tokio::test]
-    async fn inscription_charms(
+    async fn inscription_dogespells(
         (block_height, cursed, ordinal_number, script_pubkey): (u64, bool, u64, String),
-    ) -> Result<Vec<Charm>, String> {
+    ) -> Result<Vec<Dogespell>, String> {
         let ctx = Context::empty();
         let mut sequence_cursor = SequenceCursor::new();
         let mut cache_l1 = BTreeMap::new();
@@ -850,7 +850,7 @@ mod test {
                                 transfers_pre_inscription: 0,
                                 koinupoint_post_inscription: "".into(),
                                 curse_type: if cursed { Some(OrdinalInscriptionCurseType::Generic) } else { None },
-                                charms: 0,
+                                dogespells: 0,
                                 unbound_sequence: None,
                             },
                         ))
@@ -868,11 +868,11 @@ mod test {
             .await?;
 
             let result = &block.transactions[1].metadata.ordinal_operations[0];
-            let charms = match result {
-                OrdinalOperation::InscriptionRevealed(data) => data.charms,
+            let dogespells = match result {
+                OrdinalOperation::InscriptionRevealed(data) => data.dogespells,
                 _ => unreachable!(),
             };
-            Ok(Charm::charms(charms))
+            Ok(Dogespell::dogespells(dogespells))
         };
         pg_reset_db(&mut pg_client).await?;
 

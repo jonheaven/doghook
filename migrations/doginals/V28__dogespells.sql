@@ -1,7 +1,7 @@
--- Charms protocol indexing.
+-- DogeSpells protocol indexing.
 -- Spells are append-only OP_RETURN events; balances and NFT metadata are derived tables.
 
-CREATE TABLE IF NOT EXISTS charms_spells (
+CREATE TABLE IF NOT EXISTS dogespells (
     id               BIGSERIAL PRIMARY KEY,
     txid             TEXT        NOT NULL,
     vout             BIGINT      NOT NULL,
@@ -24,22 +24,22 @@ CREATE TABLE IF NOT EXISTS charms_spells (
     UNIQUE (txid, vout)
 );
 
-CREATE TABLE IF NOT EXISTS charms_balances (
+CREATE TABLE IF NOT EXISTS dogespells_balances (
     ticker   TEXT    NOT NULL,
     address  TEXT    NOT NULL,
     balance  NUMERIC NOT NULL,
     PRIMARY KEY (ticker, address)
 );
 
-CREATE TABLE IF NOT EXISTS charms_nfts (
+CREATE TABLE IF NOT EXISTS dogespells_nfts (
     identity       TEXT PRIMARY KEY,
     ticker         TEXT,
     metadata_json  JSONB
 );
 
-CREATE INDEX IF NOT EXISTS charms_spells_block_height_idx ON charms_spells (block_height DESC);
-CREATE INDEX IF NOT EXISTS charms_spells_identity_idx ON charms_spells (identity);
-CREATE INDEX IF NOT EXISTS charms_spells_ticker_idx ON charms_spells (ticker);
-CREATE INDEX IF NOT EXISTS charms_spells_txid_idx ON charms_spells (txid);
-CREATE INDEX IF NOT EXISTS charms_balances_address_idx ON charms_balances (address);
-CREATE INDEX IF NOT EXISTS charms_nfts_ticker_idx ON charms_nfts (ticker);
+CREATE INDEX IF NOT EXISTS dogespells_block_height_idx ON dogespells (block_height DESC);
+CREATE INDEX IF NOT EXISTS dogespells_identity_idx ON dogespells (identity);
+CREATE INDEX IF NOT EXISTS dogespells_ticker_idx ON dogespells (ticker);
+CREATE INDEX IF NOT EXISTS dogespells_txid_idx ON dogespells (txid);
+CREATE INDEX IF NOT EXISTS dogespells_balances_address_idx ON dogespells_balances (address);
+CREATE INDEX IF NOT EXISTS dogespells_nfts_ticker_idx ON dogespells_nfts (ticker);

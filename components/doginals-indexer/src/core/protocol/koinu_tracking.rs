@@ -342,7 +342,7 @@ mod test {
                                     transfers_pre_inscription: 0,
                                     koinupoint_post_inscription: "cbc9fcf9373cbae36f4868d73a0ad78bbdc58af7c813e6319163e101a8cac8ad:0:0".into(),
                                     curse_type: None,
-                                    charms: 0,
+                                    dogespells: 0,
                                     unbound_sequence: None,
                                 },
                             ),

@@ -1,11 +1,11 @@
-# doghook — Dogecoin Indexer
+# kabosu — Dogecoin Indexer
 
 The fastest, lightest, most selective Doginals indexer for Dogecoin.
 Backward-traversal + reorg-safe (Chainhook engine) + Hiro-style predicate filtering + real-time webhooks.
 
-## dog vs doghook
+## dog vs kabosu
 
-| | **dog** | **doghook** |
+| | **dog** | **kabosu** |
 |---|---|---|
 | Purpose | Full explorer / CLI / wallet | Blazing predicate backend + real-time hooks |
 | Storage | redb (embedded, single-process) | Postgres (multi-client, production-grade) |
@@ -16,24 +16,24 @@ Backward-traversal + reorg-safe (Chainhook engine) + Hiro-style predicate filter
 | Real-time hooks | No | Yes — POST JSON on every DNS/Dogemap event |
 | Use when | You want a local explorer or wallet | You're building an app, API, or analytics pipeline |
 
-Both projects are completely independent codebases. doghook does not import dog.
+Both projects are completely independent codebases. kabosu does not import dog.
 
 ## Supported Protocols
 
 | Protocol | Status | CLI commands |
 |---|---|---|
-| Doginals (inscriptions) | Full — backward traversal, reorg-safe | `doghook doginals service start` |
+| Doginals (inscriptions) | Full — backward traversal, reorg-safe | `kabosu doginals service start` |
 | DRC-20 | Full | via `doginals` indexer |
-| Dunes | Full | `doghook dunes service start` |
-| DNS (Dogecoin Name System) | Full — 28 namespaces, first-wins, reorg-safe | `doghook dns resolve`, `doghook dns list` |
-| Dogemap (block claims) | Full — first-wins, reorg-safe | `doghook dogemap status`, `doghook dogemap list` |
-| doge-lotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `doghook lotto deploy`, `doghook lotto mint`, `doghook lotto list`, `doghook lotto status`, `doghook lotto burn`, `doghook lotto burners` |
-| Dogetag (on-chain graffiti) | Full — OP_RETURN text messages, reorg-safe | `doghook dogetag list`, `doghook dogetag search`, `doghook dogetag address`, `doghook dogetag send` |
-| Charms | Full — OP_RETURN `CHARMS` + CBOR spells, balances, NFT metadata snapshots, reorg-safe | `doghook doginals index sync --only charms` plus `/charms/*` API routes |
+| Dunes | Full | `kabosu dunes service start` |
+| DNS (Dogecoin Name System) | Full — 28 namespaces, first-wins, reorg-safe | `kabosu dns resolve`, `kabosu dns list` |
+| Dogemap (block claims) | Full — first-wins, reorg-safe | `kabosu dogemap status`, `kabosu dogemap list` |
+| doge-lotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `kabosu lotto deploy`, `kabosu lotto mint`, `kabosu lotto list`, `kabosu lotto status`, `kabosu lotto burn`, `kabosu lotto burners` |
+| Dogetag (on-chain graffiti) | Full — OP_RETURN text messages, reorg-safe | `kabosu dogetag list`, `kabosu dogetag search`, `kabosu dogetag address`, `kabosu dogetag send` |
+| DogeSpells | Full — OP_RETURN magic-prefix + CBOR spells, balances, NFT metadata snapshots, reorg-safe | `kabosu doginals index sync --only dogespells` plus `/dogespells/*` API routes |
 
 ### doge-lotto
 
-`doghook lotto mint` broadcasts one atomic transaction that:
+`kabosu lotto mint` broadcasts one atomic transaction that:
 
 - Pays the deploy's `prize_pool_address` the exact `ticket_price_koinu` amount.
 - Optionally pays an immutable protocol developer tip in the same transaction.
@@ -44,7 +44,7 @@ This lets the indexer verify payment and tip commitments trustlessly.
 Example deploy payload with explicit ticket cutoff (if omitted, defaults to `draw_block - 10`):
 
 ```bash
-doghook lotto deploy \
+kabosu lotto deploy \
    --type doge-69-420 \
    --draw-block 6200000 \
    --cutoff-block 6199990 \
@@ -70,11 +70,11 @@ Mints can include `--tip <0-10>` (default `0`) to commit an immutable protocol-d
 Example mint with a 5% immutable tip:
 
 ```bash
-doghook lotto mint \
+kabosu lotto mint \
    --lotto doge-69-420 \
    --quickpick \
    --tip 5 \
-   --config-path doghook.toml
+   --config-path kabosu.toml
 ```
 
 Set the protocol dev destination in config:
@@ -98,7 +98,7 @@ Users can transfer expired lottery tickets to the official burn address (`DBurnX
 **Burn a ticket:**
 ```bash
 # Get ticket info and burn address
-doghook lotto burn <ticket-inscription-id> --config-path doghook.toml
+kabosu lotto burn <ticket-inscription-id> --config-path kabosu.toml
 
 # Then use your wallet to transfer the inscription to the burn address
 ```
@@ -106,13 +106,13 @@ doghook lotto burn <ticket-inscription-id> --config-path doghook.toml
 **Check Burn Points:**
 ```bash
 # View your own burn points
-doghook lotto burners --address D1abc... --config-path doghook.toml
+kabosu lotto burners --address D1abc... --config-path kabosu.toml
 
 # View leaderboard (top 10 burners)
-doghook lotto burners --config-path doghook.toml
+kabosu lotto burners --config-path kabosu.toml
 
 # JSON output
-doghook lotto burners --config-path doghook.toml --json
+kabosu lotto burners --config-path kabosu.toml --json
 ```
 
 #### Unclaimed Prizes — Supporting Protocol Development
@@ -121,7 +121,7 @@ doghook lotto burners --config-path doghook.toml --json
 - Prizes that remain unclaimed for **30 days after the draw block** are permanently considered donations to the protocol developers.
 - The `prize_pool_address` (set during lottery deployment) permanently holds all ticket payments and unclaimed prizes.
 - Winners have 30 days to claim their prizes by transferring the winning ticket inscription to their desired address.
-- After 30 days, unclaimed funds remain in the prize pool address to support ongoing doghook development and infrastructure.
+- After 30 days, unclaimed funds remain in the prize pool address to support ongoing kabosu development and infrastructure.
 
 **For Protocol-Level Lotteries (`doge-69-420` and `doge-max`):**
 - This is **explicit public policy** — all participants acknowledge that unclaimed prizes fund future development.
@@ -135,7 +135,7 @@ doghook lotto burners --config-path doghook.toml --json
 **Check Prize Status:**
 ```bash
 # View lottery status including unclaimed prizes
-doghook lotto status <lotto-id> --config-path doghook.toml
+kabosu lotto status <lotto-id> --config-path kabosu.toml
 ```
 
 The `lotto status` command shows:
@@ -154,16 +154,16 @@ First inscription to register a name wins. Fully reorg-safe.
 
 ```bash
 # Resolve a name
-doghook dns resolve satoshi.doge --config-path doghook.toml
+kabosu dns resolve satoshi.doge --config-path kabosu.toml
 
 # List all registered names
-doghook dns list --config-path doghook.toml
+kabosu dns list --config-path kabosu.toml
 
 # Filter by namespace
-doghook dns list --namespace doge --config-path doghook.toml
+kabosu dns list --namespace doge --config-path kabosu.toml
 
 # JSON output
-doghook dns resolve satoshi.doge --config-path doghook.toml --json
+kabosu dns resolve satoshi.doge --config-path kabosu.toml --json
 ```
 
 ### Dogemap (block claims)
@@ -173,13 +173,13 @@ First claim wins. Fully reorg-safe.
 
 ```bash
 # Check if a block has been claimed
-doghook dogemap status 1000000 --config-path doghook.toml
+kabosu dogemap status 1000000 --config-path kabosu.toml
 
 # List all claimed blocks
-doghook dogemap list --config-path doghook.toml --limit 50
+kabosu dogemap list --config-path kabosu.toml --limit 50
 
 # JSON output
-doghook dogemap status 1000000 --config-path doghook.toml --json
+kabosu dogemap status 1000000 --config-path kabosu.toml --json
 ```
 
 Dogemap is its own inscription metaprotocol and is indexed independently of DNS, Dogetag, DRC-20, and doge-lotto.
@@ -199,28 +199,28 @@ enabled = true
 
 **List recent tags:**
 ```bash
-doghook dogetag list --config-path doghook.toml
-doghook dogetag list --limit 100 --json --config-path doghook.toml
+kabosu dogetag list --config-path kabosu.toml
+kabosu dogetag list --limit 100 --json --config-path kabosu.toml
 ```
 
 **Search by message content:**
 ```bash
-doghook dogetag search "much wow" --config-path doghook.toml
-doghook dogetag search "satoshi" --json --config-path doghook.toml
+kabosu dogetag search "much wow" --config-path kabosu.toml
+kabosu dogetag search "satoshi" --json --config-path kabosu.toml
 ```
 
 **Tags by address:**
 ```bash
-doghook dogetag address DYourAddressHere --config-path doghook.toml
+kabosu dogetag address DYourAddressHere --config-path kabosu.toml
 ```
 
 **Send DOGE + burn a message in the same tx:**
 ```bash
-doghook dogetag send \
+kabosu dogetag send \
   --to DRecipientAddressHere \
   --amount 5.0 \
   --message "such graffiti very chain wow" \
-  --config-path doghook.toml
+  --config-path kabosu.toml
 ```
 
 **Webhook event payload:**
@@ -237,38 +237,38 @@ doghook dogetag send \
 
 Dogetag indexing tracks OP_RETURN UTF-8 graffiti messages from standard Dogecoin transactions and exposes them through CLI queries, web APIs, and webhooks.
 
-### Charms — OP_RETURN CBOR Spells
+### DogeSpells — OP_RETURN CBOR Spells
 
-Charms spells are **not inscriptions**. doghook scans every OP_RETURN output, looks for the ASCII magic prefix `CHARMS`, decodes the trailing CBOR spell, and indexes only spells whose `chain_id` is `doge`.
+DogeSpells spells are **not inscriptions**. kabosu scans every OP_RETURN output, looks for the DogeSpells magic prefix, decodes the trailing CBOR spell, and indexes only spells whose `chain_id` is `doge`.
 
 Enable in config (default `true` when section is absent):
 
 ```toml
-[protocols.charms]
+[protocols.dogespells]
 enabled = true
 ```
 
-Run a dedicated Charms-only sync:
+Run a dedicated DogeSpells-only sync:
 
 ```bash
-doghook doginals index sync --only charms --config-path doghook.toml
+kabosu doginals index sync --only dogespells --config-path kabosu.toml
 ```
 
 Web/API routes:
 
 ```text
-GET /charms/balance/:ticker/:address
-GET /charms/history/:ticker/:address
-GET /charms/spells/:txid
+GET /dogespells/balance/:ticker/:address
+GET /dogespells/history/:ticker/:address
+GET /dogespells/spells/:txid
 ```
 
 ## Web Explorer
 
-Doghook includes a lightweight built-in explorer + JSON API server.
+Kabosu includes a lightweight built-in explorer + JSON API server.
 
 ### Quick Start
 
-1. Enable web explorer in `doghook.toml`:
+1. Enable web explorer in `kabosu.toml`:
 
 ```toml
 [web]
@@ -279,7 +279,7 @@ port = 8080
 2. Start the indexer service:
 
 ```bash
-doghook doginals service start --config-path doghook.toml
+kabosu doginals service start --config-path kabosu.toml
 ```
 
 3. Open your browser to **http://localhost:8080**
@@ -297,9 +297,9 @@ doghook doginals service start --config-path doghook.toml
 - `GET /api/dns/names`
 - `GET /api/dogemap/claims`
 - `GET /api/dogetags`
-- `GET /charms/balance/:ticker/:address`
-- `GET /charms/history/:ticker/:address`
-- `GET /charms/spells/:txid`
+- `GET /dogespells/balance/:ticker/:address`
+- `GET /dogespells/history/:ticker/:address`
+- `GET /dogespells/spells/:txid`
 - HTML pages: `/`, `/inscriptions`, `/drc20`, `/dunes`, `/lotto`
 
 The bundled HTML currently focuses on lotto flows (tickets, QR, burn actions).
@@ -313,7 +313,7 @@ Example nginx config:
 ```nginx
 server {
    listen 80;
-   server_name doghook.yourdomain.com;
+   server_name kabosu.yourdomain.com;
     
    location / {
       proxy_pass http://localhost:8080;
@@ -323,7 +323,7 @@ server {
 }
 ```
 
-Or use Cloudflare Tunnel (see launcher scripts in `C:\Users\<user>\bin\doghook-launch.bat`).
+Or use Cloudflare Tunnel (see launcher scripts in `C:\Users\<user>\bin\kabosu-launch.bat`).
 
 ### API Endpoints
 
@@ -372,20 +372,20 @@ All APIs return JSON. Use these to build custom dashboards or integrations.
 3. Copy and edit the config:
 
    ```bash
-   cp doghook.toml my-indexer.toml
+   cp kabosu.toml my-indexer.toml
    # edit my-indexer.toml
    ```
 
 4. Migrate the database:
 
    ```bash
-   doghook doginals database migrate --config-path my-indexer.toml
+   kabosu doginals database migrate --config-path my-indexer.toml
    ```
 
 5. Start indexing:
 
    ```bash
-   doghook doginals service start --config-path my-indexer.toml
+   kabosu doginals service start --config-path my-indexer.toml
    ```
 
 ## Example Configurations
@@ -443,7 +443,7 @@ enabled = true
 ```toml
 [webhooks]
 enabled = true
-urls    = ["https://api.yourapp.com/hooks/doghook"]
+urls    = ["https://api.yourapp.com/hooks/kabosu"]
 ```
 
 **DNS event payload:**
@@ -481,7 +481,7 @@ Only inscriptions matching **all** non-empty filter lists are stored. When disab
 
 ## Reorg Safety
 
-Dogecoin produces 1-minute blocks and experiences more frequent reorgs than Bitcoin. doghook handles this automatically:
+Dogecoin produces 1-minute blocks and experiences more frequent reorgs than Bitcoin. kabosu handles this automatically:
 
 - ZMQ `rawblock` stream tracks the live chain tip
 - On reorg detection: `rollback_block` removes inscription data, DNS registrations, Dogemap claims, and DRC-20 operations for each orphaned block — in a single Postgres transaction
@@ -489,8 +489,8 @@ Dogecoin produces 1-minute blocks and experiences more frequent reorgs than Bitc
 
 ## Webhook Payload Examples + Sample Receiver
 
-doghook fires real-time webhooks on every inscription event (reveals, transfers, DRC-20 ops, Dunes etching, etc.).
-Webhooks are atomic and reorg-safe — if a block is reorged, doghook rolls back and re-sends corrected events.
+kabosu fires real-time webhooks on every inscription event (reveals, transfers, DRC-20 ops, Dunes etching, etc.).
+Webhooks are atomic and reorg-safe — if a block is reorged, kabosu rolls back and re-sends corrected events.
 
 ### Example payloads (JSON)
 
@@ -557,7 +557,7 @@ app.post('/webhook', (req, res) => {
 app.listen(3000, () => console.log('Webhook receiver running on port 3000'));
 ```
 
-Add to `doghook.toml`:
+Add to `kabosu.toml`:
 ```toml
 [webhooks]
 urls = ["http://localhost:3000/webhook"]
@@ -578,38 +578,38 @@ RUN cargo build --release --package cli
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/doghook /usr/local/bin/
-COPY doghook.toml /etc/doghook.toml
-CMD ["doghook", "doginals", "index", "--config-path", "/etc/doghook.toml"]
+COPY --from=builder /app/target/release/kabosu /usr/local/bin/
+COPY kabosu.toml /etc/kabosu.toml
+CMD ["kabosu", "doginals", "index", "--config-path", "/etc/kabosu.toml"]
 ```
 
 ```bash
-docker build -t doghook .
+docker build -t kabosu .
 docker run -d \
   -v /path/to/dogecoin-data:/root/.dogecoin \
-  -v /path/to/doghook.toml:/etc/doghook.toml \
+  -v /path/to/kabosu.toml:/etc/kabosu.toml \
   -p 8080:8080 \
-  doghook
+  kabosu
 ```
 
-Charms migrations run automatically on startup. Once the indexer is live, query:
+DogeSpells migrations run automatically on startup. Once the indexer is live, query:
 
 ```text
-/charms/balance/<ticker>/<address>
-/charms/history/<ticker>/<address>
-/charms/spells/<txid>
+/dogespells/balance/<ticker>/<address>
+/dogespells/history/<ticker>/<address>
+/dogespells/spells/<txid>
 ```
 
 ### 2. systemd service (bare-metal)
 
 ```ini
-# /etc/systemd/system/doghook.service
+# /etc/systemd/system/kabosu.service
 [Unit]
-Description=Doghook Dogecoin Doginals Indexer
+Description=Kabosu Dogecoin Doginals Indexer
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/doghook doginals index --config-path /etc/doghook.toml
+ExecStart=/usr/local/bin/kabosu doginals index --config-path /etc/kabosu.toml
 Restart=always
 User=youruser
 Environment=RUST_LOG=info
@@ -619,7 +619,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable --now doghook
+sudo systemctl enable --now kabosu
 ```
 
 ### 3. Nginx reverse proxy
@@ -627,7 +627,7 @@ sudo systemctl enable --now doghook
 ```nginx
 server {
     listen 80;
-    server_name doghook.yourdomain.com;
+    server_name kabosu.yourdomain.com;
 
     location / {
         proxy_pass http://localhost:8080;
@@ -647,7 +647,7 @@ server {
 
 ## API Endpoints Reference
 
-doghook ships with a lightweight explorer + REST API on the configured port (default `8080`).
+kabosu ships with a lightweight explorer + REST API on the configured port (default `8080`).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -697,10 +697,10 @@ The `--predicate` flag (and config) lets you index exactly what you care about.
 
 ---
 
-## Complete Example doghook.toml
+## Complete Example kabosu.toml
 
 ```toml
-# doghook.toml — Full production example
+# kabosu.toml — Full production example
 
 [dogecoin]
 data_dir = "C:\\Users\\jheav\\AppData\\Roaming\\Dogecoin"   # ← Change this
@@ -738,8 +738,9 @@ predicates = [
 cargo build --release
 ```
 
-The binary is at `target/release/doghook`.
+The binary is at `target/release/kabosu`.
 
 ---
 
 Made with love for the Doge community. Much index. Very fast. Wow.
+

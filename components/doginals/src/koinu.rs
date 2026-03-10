@@ -107,31 +107,31 @@ impl Koinu {
     name.chars().rev().collect()
   }
 
-  pub fn charms(self) -> u16 {
-    let mut charms = 0;
+  pub fn dogespells(self) -> u16 {
+    let mut dogespells = 0;
 
     if self.nineball() {
-      Charm::Nineball.set(&mut charms);
+      Dogespell::Nineball.set(&mut dogespells);
     }
 
     if self.palindrome() {
-      Charm::Palindrome.set(&mut charms);
+      Dogespell::Palindrome.set(&mut dogespells);
     }
 
     if self.coin() {
-      Charm::Coin.set(&mut charms);
+      Dogespell::Coin.set(&mut dogespells);
     }
 
     match self.rarity() {
       Rarity::Common => {}
-      Rarity::Epic => Charm::Epic.set(&mut charms),
-      Rarity::Legendary => Charm::Legendary.set(&mut charms),
-      Rarity::Mythic => Charm::Mythic.set(&mut charms),
-      Rarity::Rare => Charm::Rare.set(&mut charms),
-      Rarity::Uncommon => Charm::Uncommon.set(&mut charms),
+      Rarity::Epic => Dogespell::Epic.set(&mut dogespells),
+      Rarity::Legendary => Dogespell::Legendary.set(&mut dogespells),
+      Rarity::Mythic => Dogespell::Mythic.set(&mut dogespells),
+      Rarity::Rare => Dogespell::Rare.set(&mut dogespells),
+      Rarity::Uncommon => Dogespell::Uncommon.set(&mut dogespells),
     }
 
-    charms
+    dogespells
   }
 
   fn from_name(s: &str) -> Result<Self, Error> {
@@ -841,10 +841,10 @@ mod tests {
   }
 
   #[test]
-  fn palindrome_charm() {
-    assert!(Charm::Palindrome.is_set(Koinu(0).charms()));
-    assert!(!Charm::Palindrome.is_set(Koinu(10).charms()));
-    assert!(Charm::Palindrome.is_set(Koinu(11).charms()));
+  fn palindrome_dogespell() {
+    assert!(Dogespell::Palindrome.is_set(Koinu(0).dogespells()));
+    assert!(!Dogespell::Palindrome.is_set(Koinu(10).dogespells()));
+    assert!(Dogespell::Palindrome.is_set(Koinu(11).dogespells()));
   }
 
   #[test]

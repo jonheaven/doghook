@@ -1,0 +1,1 @@
+ALTER TABLE inscriptions ADD COLUMN dogespells BIGINT NOT NULL DEFAULT 0;

@@ -33,7 +33,7 @@ use postgres::pg_pool;
 mod commands;
 
 const DEFAULT_LOTTO_FEE_RATE: f64 = 1.0;
-const ONLY_PREDICATE_SENTINEL_MIME: &str = "application/x-doghook-never-index";
+const ONLY_PREDICATE_SENTINEL_MIME: &str = "application/x-kabosu-never-index";
 
 pub fn main() {
     let logger = hiro_system_kit::log::setup_logger();
@@ -90,7 +90,7 @@ fn run_refresh_blk_index(cmd: &RefreshBlkIndexCommand, ctx: &Context) -> Result<
     let (copied, skipped) = refresh_index_copy(&live_index, &copy_dir)?;
 
     println!("Done: {copied} file(s) updated, {skipped} already up-to-date.");
-    println!("doghook will now use direct .blk reads on the next sync (5-20× faster).");
+    println!("kabosu will now use direct .blk reads on the next sync (5-20× faster).");
     try_info!(
         ctx,
         "blk-index refresh: {copied} updated, {skipped} unchanged → {}",
@@ -169,11 +169,11 @@ async fn run_doginals_scan(
 }
 
 fn check_maintenance_mode(ctx: &Context) {
-    let maintenance_enabled = std::env::var("DOGHOOK_MAINTENANCE").unwrap_or("0".into());
+    let maintenance_enabled = std::env::var("KABOSU_MAINTENANCE").unwrap_or("0".into());
     if maintenance_enabled.eq("1") {
         try_info!(
             ctx,
-            "Entering maintenance mode. Unset DOGHOOK_MAINTENANCE and reboot to resume operations"
+            "Entering maintenance mode. Unset KABOSU_MAINTENANCE and reboot to resume operations"
         );
         sleep(Duration::from_secs(u64::MAX))
     }
@@ -235,7 +235,7 @@ fn apply_only_protocol_selection(
     config.protocols.dogemap.enabled = false;
     config.protocols.dogetag.enabled = false;
     config.protocols.lotto.enabled = false;
-    config.protocols.charms.enabled = false;
+    config.protocols.dogespells.enabled = false;
 
     if let Some(doginals) = config.doginals.as_mut() {
         doginals.predicates = Some(DoginalsPredicatesConfig {
@@ -256,10 +256,10 @@ fn apply_only_protocol_selection(
         "dogemap" => config.protocols.dogemap.enabled = true,
         "dogetag" => config.protocols.dogetag.enabled = true,
         "lotto" => config.protocols.lotto.enabled = true,
-        "charms" => config.protocols.charms.enabled = true,
+        "dogespells" => config.protocols.dogespells.enabled = true,
         other => {
             return Err(format!(
-                "unsupported --only value '{}' (expected one of: dns, dogemap, dogetag, lotto, charms)",
+                "unsupported --only value '{}' (expected one of: dns, dogemap, dogetag, lotto, dogespells)",
                 other
             ));
         }
@@ -2121,3 +2121,4 @@ fn parse_dogecoin_address(addr: &str) -> Result<ScriptBuf, String> {
         )),
     }
 }
+

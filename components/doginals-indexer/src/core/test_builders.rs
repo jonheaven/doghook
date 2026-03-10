@@ -104,7 +104,7 @@ impl TestTransactionBuilder {
                 transfers_pre_inscription: 0,
                 koinupoint_post_inscription: "b61b0172d95e266c18aea0c624db987e971a5d6d4ebc2aaed85da4642d635735:0:0".to_string(),
                 curse_type: None,
-                charms: 0,
+                dogespells: 0,
                 unbound_sequence: None,
             },
         )];

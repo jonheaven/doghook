@@ -18,7 +18,7 @@ use super::models::{
     DbCurrentLocation, DbInscription, DbInscriptionParent, DbInscriptionRecursion, DbKoinu,
     DbLocation,
 };
-use crate::core::meta_protocols::charms::{identity_hex, IndexedCharmsSpell};
+use crate::core::meta_protocols::dogespells::{identity_hex, IndexedDogeSpellsSpell};
 use crate::core::meta_protocols::lotto::{
     classic_prize_bps, compute_ticket_fingerprint, count_classic_matches,
     derive_classic_drawn_numbers, derive_classic_numbers, derive_draw_for_deploy, score_ticket,
@@ -335,7 +335,7 @@ async fn insert_inscriptions<T: GenericClient>(
             params.push(&row.metaprotocol);
             params.push(&row.delegate);
             params.push(&row.timestamp);
-            params.push(&row.charms);
+            params.push(&row.dogespells);
             params.push(&row.unbound_sequence);
         }
         client
@@ -343,7 +343,7 @@ async fn insert_inscriptions<T: GenericClient>(
                 &format!("INSERT INTO inscriptions
                     (inscription_id, ordinal_number, number, classic_number, block_height, block_hash, tx_id, tx_index, address,
                     mime_type, content_type, content_length, content, fee, curse_type, recursive, input_index, pointer, metadata,
-                    metaprotocol, delegate, timestamp, charms, unbound_sequence)
+                    metaprotocol, delegate, timestamp, dogespells, unbound_sequence)
                     VALUES {}
                     ON CONFLICT (number) DO NOTHING", utils::multi_row_query_param_str(chunk.len(), 24)),
                 &params,
@@ -3140,11 +3140,11 @@ pub async fn count_dogetags<T: GenericClient>(client: &T) -> Result<i64, String>
 }
 
 // ---------------------------------------------------------------------------
-// Charms - OP_RETURN spell indexing
+// DogeSpells - OP_RETURN spell indexing
 // ---------------------------------------------------------------------------
 
-pub async fn insert_charms_spells<T: GenericClient>(
-    spells: &[IndexedCharmsSpell],
+pub async fn insert_dogespells<T: GenericClient>(
+    spells: &[IndexedDogeSpellsSpell],
     client: &T,
 ) -> Result<(), String> {
     let mut affected_tickers = HashSet::new();
@@ -3160,7 +3160,7 @@ pub async fn insert_charms_spells<T: GenericClient>(
 
         client
             .execute(
-                "INSERT INTO charms_spells
+                "INSERT INTO dogespells
                     (txid, vout, block_height, block_timestamp, version, tag, op, identity,
                      chain_id, ticker, name, amount, decimals, from_addr, to_addr, beam_to,
                      beam_proof, raw_cbor)
@@ -3191,7 +3191,7 @@ pub async fn insert_charms_spells<T: GenericClient>(
                 ],
             )
             .await
-            .map_err(|e| format!("insert_charms_spells: {e}"))?;
+            .map_err(|e| format!("insert_dogespells: {e}"))?;
 
         if let Some(ticker) = spell.ticker.clone() {
             affected_tickers.insert(ticker);
@@ -3202,17 +3202,17 @@ pub async fn insert_charms_spells<T: GenericClient>(
     }
 
     for ticker in affected_tickers {
-        rebuild_charms_balances_for_ticker(&ticker, client).await?;
+        rebuild_dogespells_balances_for_ticker(&ticker, client).await?;
     }
 
     for identity in affected_nfts {
-        rebuild_charms_nft(&identity, client).await?;
+        rebuild_dogespells_nft(&identity, client).await?;
     }
 
     Ok(())
 }
 
-pub async fn rollback_charms<T: GenericClient>(
+pub async fn rollback_dogespells<T: GenericClient>(
     block_height: u64,
     client: &T,
 ) -> Result<(), String> {
@@ -3220,12 +3220,12 @@ pub async fn rollback_charms<T: GenericClient>(
     let rows = client
         .query(
             "SELECT ticker, identity, tag
-             FROM charms_spells
+             FROM dogespells
              WHERE block_height = $1::numeric",
             &[&height],
         )
         .await
-        .map_err(|e| format!("rollback_charms (select affected state): {e}"))?;
+        .map_err(|e| format!("rollback_dogespells (select affected state): {e}"))?;
 
     let mut affected_tickers = HashSet::new();
     let mut affected_nfts = HashSet::new();
@@ -3245,35 +3245,35 @@ pub async fn rollback_charms<T: GenericClient>(
 
     client
         .execute(
-            "DELETE FROM charms_spells WHERE block_height = $1::numeric",
+            "DELETE FROM dogespells WHERE block_height = $1::numeric",
             &[&height],
         )
         .await
-        .map_err(|e| format!("rollback_charms (delete spells): {e}"))?;
+        .map_err(|e| format!("rollback_dogespells (delete spells): {e}"))?;
 
     for ticker in affected_tickers {
-        rebuild_charms_balances_for_ticker(&ticker, client).await?;
+        rebuild_dogespells_balances_for_ticker(&ticker, client).await?;
     }
 
     for identity in affected_nfts {
-        rebuild_charms_nft(&identity, client).await?;
+        rebuild_dogespells_nft(&identity, client).await?;
     }
 
     Ok(())
 }
 
-async fn rebuild_charms_balances_for_ticker<T: GenericClient>(
+async fn rebuild_dogespells_balances_for_ticker<T: GenericClient>(
     ticker: &str,
     client: &T,
 ) -> Result<(), String> {
     client
-        .execute("DELETE FROM charms_balances WHERE ticker = $1", &[&ticker])
+        .execute("DELETE FROM dogespells_balances WHERE ticker = $1", &[&ticker])
         .await
-        .map_err(|e| format!("rebuild_charms_balances_for_ticker (delete): {e}"))?;
+        .map_err(|e| format!("rebuild_dogespells_balances_for_ticker (delete): {e}"))?;
 
     client
         .execute(
-            "INSERT INTO charms_balances (ticker, address, balance)
+            "INSERT INTO dogespells_balances (ticker, address, balance)
              SELECT ticker, address, SUM(delta) AS balance
              FROM (
                  SELECT ticker,
@@ -3283,7 +3283,7 @@ async fn rebuild_charms_balances_for_ticker<T: GenericClient>(
                             ELSE NULL
                         END AS address,
                         amount::numeric AS delta
-                 FROM charms_spells
+                 FROM dogespells
                  WHERE ticker = $1
                    AND amount IS NOT NULL
                    AND op IN ('mint', 'transfer', 'beam_in')
@@ -3291,7 +3291,7 @@ async fn rebuild_charms_balances_for_ticker<T: GenericClient>(
                  SELECT ticker,
                         from_addr AS address,
                         -amount::numeric AS delta
-                 FROM charms_spells
+                 FROM dogespells
                  WHERE ticker = $1
                    AND amount IS NOT NULL
                    AND op IN ('transfer', 'burn', 'beam_out')
@@ -3302,20 +3302,20 @@ async fn rebuild_charms_balances_for_ticker<T: GenericClient>(
             &[&ticker],
         )
         .await
-        .map_err(|e| format!("rebuild_charms_balances_for_ticker (insert): {e}"))?;
+        .map_err(|e| format!("rebuild_dogespells_balances_for_ticker (insert): {e}"))?;
 
     Ok(())
 }
 
-async fn rebuild_charms_nft<T: GenericClient>(identity: &str, client: &T) -> Result<(), String> {
+async fn rebuild_dogespells_nft<T: GenericClient>(identity: &str, client: &T) -> Result<(), String> {
     client
-        .execute("DELETE FROM charms_nfts WHERE identity = $1", &[&identity])
+        .execute("DELETE FROM dogespells_nfts WHERE identity = $1", &[&identity])
         .await
-        .map_err(|e| format!("rebuild_charms_nft (delete): {e}"))?;
+        .map_err(|e| format!("rebuild_dogespells_nft (delete): {e}"))?;
 
     client
         .execute(
-            "INSERT INTO charms_nfts (identity, ticker, metadata_json)
+            "INSERT INTO dogespells_nfts (identity, ticker, metadata_json)
              SELECT identity,
                     ticker,
                     jsonb_strip_nulls(
@@ -3339,7 +3339,7 @@ async fn rebuild_charms_nft<T: GenericClient>(identity: &str, client: &T) -> Res
                             'block_timestamp', block_timestamp
                         )
                     )
-             FROM charms_spells
+             FROM dogespells
              WHERE identity = $1
                AND tag = 'n'
              ORDER BY block_height DESC, id DESC
@@ -3347,7 +3347,7 @@ async fn rebuild_charms_nft<T: GenericClient>(identity: &str, client: &T) -> Res
             &[&identity],
         )
         .await
-        .map_err(|e| format!("rebuild_charms_nft (insert): {e}"))?;
+        .map_err(|e| format!("rebuild_dogespells_nft (insert): {e}"))?;
 
     Ok(())
 }
@@ -3554,7 +3554,7 @@ mod test {
                                     transfers_pre_inscription: 0,
                                     koinupoint_post_inscription: "b61b0172d95e266c18aea0c624db987e971a5d6d4ebc2aaed85da4642d635735:0:0".to_string(),
                                     curse_type: None,
-                                    charms: 0,
+                                    dogespells: 0,
                                     unbound_sequence: None,
                                 },
                             ))

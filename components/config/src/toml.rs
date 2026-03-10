@@ -6,7 +6,7 @@ use std::{
 use bitcoin::Network;
 
 use crate::{
-    CharmsProtocolConfig, Config, DnsProtocolConfig, DogecoinConfig, DogecoinDataSource,
+    DogeSpellsProtocolConfig, Config, DnsProtocolConfig, DogecoinConfig, DogecoinDataSource,
     DogemapProtocolConfig, DogetagProtocolConfig, DoginalConfig, DoginalDrc20Config,
     DoginalMetaProtocolsConfig, DoginalsPredicatesConfig, DunesConfig, LottoProtocolConfig,
     MetricsConfig, PgDatabaseConfig, ProtocolsConfig, ResourcesConfig, StorageConfig, WebConfig,
@@ -121,7 +121,7 @@ pub struct ProtocolsConfigToml {
     pub dogemap: Option<DogemapProtocolConfigToml>,
     pub lotto: Option<LottoProtocolConfigToml>,
     pub dogetag: Option<DogetagProtocolConfigToml>,
-    pub charms: Option<CharmsProtocolConfigToml>,
+    pub dogespells: Option<DogeSpellsProtocolConfigToml>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -130,7 +130,7 @@ pub struct DogetagProtocolConfigToml {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct CharmsProtocolConfigToml {
+pub struct DogeSpellsProtocolConfigToml {
     pub enabled: Option<bool>,
 }
 
@@ -261,8 +261,8 @@ impl ConfigToml {
                 dogetag: DogetagProtocolConfig {
                     enabled: p.dogetag.as_ref().and_then(|d| d.enabled).unwrap_or(true),
                 },
-                charms: CharmsProtocolConfig {
-                    enabled: p.charms.as_ref().and_then(|c| c.enabled).unwrap_or(true),
+                dogespells: DogeSpellsProtocolConfig {
+                    enabled: p.dogespells.as_ref().and_then(|c| c.enabled).unwrap_or(true),
                 },
                 lotto: LottoProtocolConfig {
                     enabled: p.lotto.as_ref().and_then(|l| l.enabled).unwrap_or(true),
@@ -331,10 +331,10 @@ impl ConfigToml {
                 rpc_url: toml.dogecoin.rpc_url.to_string(),
                 rpc_username: toml.dogecoin.rpc_username
                     .or_else(|| std::env::var("DOGE_RPC_USERNAME").ok())
-                    .ok_or("dogecoin.rpc_username missing (set in doghook.toml or DOGE_RPC_USERNAME env var)")?,
+                    .ok_or("dogecoin.rpc_username missing (set in kabosu.toml or DOGE_RPC_USERNAME env var)")?,
                 rpc_password: toml.dogecoin.rpc_password
                     .or_else(|| std::env::var("DOGE_RPC_PASSWORD").ok())
-                    .ok_or("dogecoin.rpc_password missing (set in doghook.toml or DOGE_RPC_PASSWORD env var)")?,
+                    .ok_or("dogecoin.rpc_password missing (set in kabosu.toml or DOGE_RPC_PASSWORD env var)")?,
                 network: bitcoin_network,
                 zmq_url: toml.dogecoin.zmq_url,
                 dogecoin_data_dir: toml.dogecoin.dogecoin_data_dir
@@ -354,3 +354,4 @@ impl ConfigToml {
         Ok(config)
     }
 }
+

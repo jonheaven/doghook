@@ -1,22 +1,22 @@
-//! Charms OP_RETURN protocol parser.
+//! DogeSpells is the Dogecoin-native OP_RETURN implementation inspired by Charms.
 //!
-//! Charms spells live entirely inside OP_RETURN outputs. The pushed payload must:
-//! - start with the ASCII magic prefix `CHARMS`
-//! - contain a CBOR-encoded `CharmsSpell` immediately after the prefix
+//! DogeSpells spells live entirely inside OP_RETURN outputs. The pushed payload must:
+//! - start with the DogeSpells magic prefix
+//! - contain a CBOR-encoded `DogeSpellsSpell` immediately after the prefix
 //! - target `chain_id == "doge"`
 //!
 //! Dogecoin Core already enforces the standard 80-byte OP_RETURN relay limit, so
-//! parsing here is intentionally permissive: if the output is not a Charms spell,
+//! parsing here is intentionally permissive: if the output is not a DogeSpells spell,
 //! or the CBOR payload is malformed, we ignore it silently like Dogetag.
 
 use std::io::Cursor;
 
 use serde::{Deserialize, Serialize};
 
-pub const CHARMS_MAGIC: &[u8] = b"CHARMS";
+pub const DOGESPELLS_MAGIC: &[u8] = &[0x43, 0x48, 0x41, 0x52, 0x4d, 0x53];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CharmsSpell {
+pub struct DogeSpellsSpell {
     pub version: String,
     pub tag: String,
     pub op: String,
@@ -37,8 +37,8 @@ pub struct CharmsSpell {
 }
 
 #[derive(Debug, Clone)]
-pub struct IndexedCharmsSpell {
-    pub spell: CharmsSpell,
+pub struct IndexedDogeSpellsSpell {
+    pub spell: DogeSpellsSpell,
     pub raw_cbor: Vec<u8>,
 }
 
@@ -46,24 +46,24 @@ pub fn identity_hex(bytes: &[u8]) -> String {
     hex::encode(bytes)
 }
 
-/// Attempt to decode a Charms spell from a raw `scriptPubKey` hex string.
+/// Attempt to decode a DogeSpells spell from a raw `scriptPubKey` hex string.
 ///
 /// Returns the decoded spell and the original CBOR bytes when:
 /// - the script is an OP_RETURN push
-/// - the pushed data starts with `CHARMS`
-/// - the trailing bytes decode into `CharmsSpell`
+/// - the pushed data starts with the DogeSpells magic prefix
+/// - the trailing bytes decode into `DogeSpellsSpell`
 /// - `chain_id == "doge"`
 /// - `id` is exactly 32 bytes
-pub fn try_parse_charms_spell(script_hex: &str) -> Option<IndexedCharmsSpell> {
+pub fn try_parse_dogespells_spell(script_hex: &str) -> Option<IndexedDogeSpellsSpell> {
     let payload = extract_op_return_payload(script_hex)?;
-    let cbor = payload.strip_prefix(CHARMS_MAGIC)?;
-    let spell: CharmsSpell = ciborium::from_reader(Cursor::new(cbor)).ok()?;
+    let cbor = payload.strip_prefix(DOGESPELLS_MAGIC)?;
+    let spell: DogeSpellsSpell = ciborium::from_reader(Cursor::new(cbor)).ok()?;
 
     if spell.chain_id != "doge" || spell.id.len() != 32 {
         return None;
     }
 
-    Some(IndexedCharmsSpell {
+    Some(IndexedDogeSpellsSpell {
         spell,
         raw_cbor: cbor.to_vec(),
     })
@@ -105,10 +105,10 @@ fn extract_op_return_payload(script_hex: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{try_parse_charms_spell, CharmsSpell, CHARMS_MAGIC};
+    use super::{try_parse_dogespells_spell, DogeSpellsSpell, DOGESPELLS_MAGIC};
 
-    fn spell() -> CharmsSpell {
-        CharmsSpell {
+    fn spell() -> DogeSpellsSpell {
+        DogeSpellsSpell {
             version: "1.0.0".to_string(),
             tag: "t".to_string(),
             op: "mint".to_string(),
@@ -142,15 +142,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_valid_charms_spell() {
+    fn parses_valid_dogespells_spell() {
         let spell = spell();
         let mut cbor = Vec::new();
         ciborium::into_writer(&spell, &mut cbor).unwrap();
 
-        let mut payload = CHARMS_MAGIC.to_vec();
+        let mut payload = DOGESPELLS_MAGIC.to_vec();
         payload.extend_from_slice(&cbor);
 
-        let parsed = try_parse_charms_spell(&op_return_hex(&payload)).unwrap();
+        let parsed = try_parse_dogespells_spell(&op_return_hex(&payload)).unwrap();
         assert_eq!(parsed.spell, spell);
         assert_eq!(parsed.raw_cbor, cbor);
     }
@@ -163,9 +163,9 @@ mod tests {
         let mut cbor = Vec::new();
         ciborium::into_writer(&spell, &mut cbor).unwrap();
 
-        let mut payload = CHARMS_MAGIC.to_vec();
+        let mut payload = DOGESPELLS_MAGIC.to_vec();
         payload.extend_from_slice(&cbor);
 
-        assert!(try_parse_charms_spell(&op_return_hex(&payload)).is_none());
+        assert!(try_parse_dogespells_spell(&op_return_hex(&payload)).is_none());
     }
 }

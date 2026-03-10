@@ -87,7 +87,7 @@ pub struct WebhooksConfig {
     /// List of URLs that will receive POST requests for every event.
     pub urls: Vec<String>,
     /// Optional HMAC-SHA256 signing secret. When set, every request includes
-    /// `X-Doghook-Signature: sha256=<hex>` so receivers can verify authenticity.
+    /// `X-Kabosu-Signature: sha256=<hex>` so receivers can verify authenticity.
     pub hmac_secret: Option<String>,
 }
 
@@ -108,7 +108,7 @@ pub struct ProtocolsConfig {
     pub dogemap: DogemapProtocolConfig,
     pub lotto: LottoProtocolConfig,
     pub dogetag: DogetagProtocolConfig,
-    pub charms: CharmsProtocolConfig,
+    pub dogespells: DogeSpellsProtocolConfig,
 }
 
 impl Default for ProtocolsConfig {
@@ -123,7 +123,7 @@ impl Default for ProtocolsConfig {
                 protocol_dev_address: String::new(),
             },
             dogetag: DogetagProtocolConfig { enabled: true },
-            charms: CharmsProtocolConfig { enabled: true },
+            dogespells: DogeSpellsProtocolConfig { enabled: true },
         }
     }
 }
@@ -152,7 +152,7 @@ pub struct DogetagProtocolConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct CharmsProtocolConfig {
+pub struct DogeSpellsProtocolConfig {
     pub enabled: bool,
 }
 
@@ -192,7 +192,7 @@ pub struct DogecoinConfig {
     pub rpc_password: String,
     pub zmq_url: String,
     /// Optional path to the Dogecoin Core data directory (e.g. ~/.dogecoin).
-    /// When set and `data_source` is `Auto` or `File`, doghook reads blocks
+    /// When set and `data_source` is `Auto` or `File`, kabosu reads blocks
     /// directly from `.blk` files for initial sync (5-20x faster than RPC).
     pub dogecoin_data_dir: Option<String>,
     /// Controls whether to use direct `.blk` file reads or JSON-RPC for
@@ -367,8 +367,8 @@ impl Config {
         self.protocols.dogetag.enabled
     }
 
-    pub fn charms_enabled(&self) -> bool {
-        self.protocols.charms.enabled
+    pub fn dogespells_enabled(&self) -> bool {
+        self.protocols.dogespells.enabled
     }
 
     pub fn doginals_predicates(&self) -> Option<&DoginalsPredicatesConfig> {
@@ -411,3 +411,4 @@ pub fn default_cache_path() -> String {
     cache_path.push("data");
     format!("{}", cache_path.display())
 }
+

@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, DeserializeFromStr, SerializeDisplay)]
-pub enum Charm {
+pub enum Dogespell {
   Coin = 0,
   Cursed = 1,
   Epic = 2,
@@ -18,7 +18,7 @@ pub enum Charm {
   Palindrome = 13,
 }
 
-impl Charm {
+impl Dogespell {
   pub const ALL: [Self; 14] = [
     Self::Coin,
     Self::Uncommon,
@@ -40,16 +40,16 @@ impl Charm {
     1 << self as u16
   }
 
-  pub fn set(self, charms: &mut u16) {
-    *charms |= self.flag();
+  pub fn set(self, dogespells: &mut u16) {
+    *dogespells |= self.flag();
   }
 
-  pub fn is_set(self, charms: u16) -> bool {
-    charms & self.flag() != 0
+  pub fn is_set(self, dogespells: u16) -> bool {
+    dogespells & self.flag() != 0
   }
 
-  pub fn unset(self, charms: u16) -> u16 {
-    charms & !self.flag()
+  pub fn unset(self, dogespells: u16) -> u16 {
+    dogespells & !self.flag()
   }
 
   pub fn icon(self) -> &'static str {
@@ -71,15 +71,15 @@ impl Charm {
     }
   }
 
-  pub fn charms(charms: u16) -> Vec<Charm> {
+  pub fn dogespells(dogespells: u16) -> Vec<Dogespell> {
     Self::ALL
       .into_iter()
-      .filter(|charm| charm.is_set(charms))
+      .filter(|dogespell| dogespell.is_set(dogespells))
       .collect()
   }
 }
 
-impl Display for Charm {
+impl Display for Dogespell {
   fn fmt(&self, f: &mut Formatter) -> fmt::Result {
     write!(
       f,
@@ -104,7 +104,7 @@ impl Display for Charm {
   }
 }
 
-impl FromStr for Charm {
+impl FromStr for Dogespell {
   type Err = String;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -123,7 +123,7 @@ impl FromStr for Charm {
       "unbound" => Self::Unbound,
       "uncommon" => Self::Uncommon,
       "vindicated" => Self::Vindicated,
-      _ => return Err(format!("invalid charm `{s}`")),
+      _ => return Err(format!("invalid dogespell `{s}`")),
     })
   }
 }
@@ -134,31 +134,31 @@ mod tests {
 
   #[test]
   fn flag() {
-    assert_eq!(Charm::Coin.flag(), 0b1);
-    assert_eq!(Charm::Cursed.flag(), 0b10);
+    assert_eq!(Dogespell::Coin.flag(), 0b1);
+    assert_eq!(Dogespell::Cursed.flag(), 0b10);
   }
 
   #[test]
   fn set() {
     let mut flags = 0;
-    assert!(!Charm::Coin.is_set(flags));
-    Charm::Coin.set(&mut flags);
-    assert!(Charm::Coin.is_set(flags));
+    assert!(!Dogespell::Coin.is_set(flags));
+    Dogespell::Coin.set(&mut flags);
+    assert!(Dogespell::Coin.is_set(flags));
   }
 
   #[test]
   fn unset() {
     let mut flags = 0;
-    Charm::Coin.set(&mut flags);
-    assert!(Charm::Coin.is_set(flags));
-    let flags = Charm::Coin.unset(flags);
-    assert!(!Charm::Coin.is_set(flags));
+    Dogespell::Coin.set(&mut flags);
+    assert!(Dogespell::Coin.is_set(flags));
+    let flags = Dogespell::Coin.unset(flags);
+    assert!(!Dogespell::Coin.is_set(flags));
   }
 
   #[test]
   fn from_str() {
-    for charm in Charm::ALL {
-      assert_eq!(charm.to_string().parse::<Charm>().unwrap(), charm);
+    for dogespell in Dogespell::ALL {
+      assert_eq!(dogespell.to_string().parse::<Dogespell>().unwrap(), dogespell);
     }
   }
 }

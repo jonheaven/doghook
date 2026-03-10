@@ -96,7 +96,7 @@ impl Brc20RevealBuilder {
             koinupoint_post_inscription:
                 "9bb2314d666ae0b1db8161cb373fcc1381681f71445c4e0335aa80ea9c37fcdd:0:0".to_string(),
             curse_type: None,
-            charms: 0,
+            dogespells: 0,
             unbound_sequence: None,
         }
     }

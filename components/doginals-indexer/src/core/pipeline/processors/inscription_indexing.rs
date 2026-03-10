@@ -20,7 +20,7 @@ use postgres::{pg_begin, pg_pool_client};
 use crate::{
     core::{
         meta_protocols::{
-            charms::{identity_hex, try_parse_charms_spell, IndexedCharmsSpell},
+            dogespells::{identity_hex, try_parse_dogespells_spell, IndexedDogeSpellsSpell},
             dogetag::try_parse_dogetag,
             drc20::{
                 cache::Brc20MemoryCache, drc20_pg, index::index_block_and_insert_drc20_operations,
@@ -137,7 +137,7 @@ pub async fn index_block(
         let mut lotto_mints: Vec<ParsedLottoMint> = Vec::new();
         // Dogetags: (txid, sender_address, message, raw_script)
         let mut dogetag_list: Vec<(String, Option<String>, String, String)> = Vec::new();
-        let mut charms_list: Vec<IndexedCharmsSpell> = Vec::new();
+        let mut dogespells_list: Vec<IndexedDogeSpellsSpell> = Vec::new();
 
         // Measure inscription parsing time
         let parsing_start = std::time::Instant::now();
@@ -179,14 +179,14 @@ pub async fn index_block(
             }
         }
 
-        // Charms scan - OP_RETURN payloads with the `CHARMS` magic prefix followed by CBOR.
+        // DogeSpells scan - OP_RETURN payloads with the DogeSpells magic prefix followed by CBOR.
         // Invalid or malformed payloads are ignored silently, matching Dogetag's behavior.
-        if config.charms_enabled() {
+        if config.dogespells_enabled() {
             for tx in &block.transactions {
                 let txid = tx.transaction_identifier.get_hash_bytes_str().to_string();
 
                 for (vout, output) in tx.metadata.outputs.iter().enumerate() {
-                    let Some(indexed) = try_parse_charms_spell(&output.script_pubkey) else {
+                    let Some(indexed) = try_parse_dogespells_spell(&output.script_pubkey) else {
                         continue;
                     };
 
@@ -199,7 +199,7 @@ pub async fn index_block(
                         continue;
                     }
 
-                    charms_list.push(indexed);
+                    dogespells_list.push(indexed);
                 }
             }
         }
@@ -443,16 +443,16 @@ pub async fn index_block(
             }
         }
 
-        if !charms_list.is_empty() {
-            if let Err(e) = doginals_pg::insert_charms_spells(&charms_list, &ord_tx).await {
-                return Err(format!("Failed to insert charms spells: {}", e));
+        if !dogespells_list.is_empty() {
+            if let Err(e) = doginals_pg::insert_dogespells(&dogespells_list, &ord_tx).await {
+                return Err(format!("Failed to insert dogespells spells: {}", e));
             }
             try_info!(
                 ctx,
-                "Indexed {} Charms spell(s) at block #{block_height}",
-                charms_list.len()
+                "Indexed {} DogeSpells spell(s) at block #{block_height}",
+                dogespells_list.len()
             );
-            for indexed in charms_list.iter().take(5) {
+            for indexed in dogespells_list.iter().take(5) {
                 let spell = &indexed.spell;
                 let short_txid = if spell.txid.len() > 16 {
                     &spell.txid[..16]
@@ -461,7 +461,7 @@ pub async fn index_block(
                 };
                 try_info!(
                     ctx,
-                    "Charms spell: op={} tag={} identity={} ticker={} tx={}#{}",
+                    "DogeSpells spell: op={} tag={} identity={} ticker={} tx={}#{}",
                     spell.op,
                     spell.tag,
                     identity_hex(&spell.id),
@@ -473,14 +473,14 @@ pub async fn index_block(
 
             let webhook_urls = config.webhook_urls().to_vec();
             if !webhook_urls.is_empty() {
-                for indexed in &charms_list {
+                for indexed in &dogespells_list {
                     let spell = &indexed.spell;
                     let payload = match spell.op.as_str() {
-                        "mint" => Some(webhooks::charms_mint_event(spell)),
-                        "transfer" => Some(webhooks::charms_transfer_event(spell)),
-                        "burn" => Some(webhooks::charms_burn_event(spell)),
-                        "beam_out" => Some(webhooks::charms_beam_out_event(spell)),
-                        "beam_in" => Some(webhooks::charms_beam_in_event(spell)),
+                        "mint" => Some(webhooks::dogespells_mint_event(spell)),
+                        "transfer" => Some(webhooks::dogespells_transfer_event(spell)),
+                        "burn" => Some(webhooks::dogespells_burn_event(spell)),
+                        "beam_out" => Some(webhooks::dogespells_beam_out_event(spell)),
+                        "beam_in" => Some(webhooks::dogespells_beam_in_event(spell)),
                         _ => None,
                     };
 
@@ -807,7 +807,7 @@ pub async fn rollback_block(
         doginals_pg::rollback_dns_names(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogemap_claims(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogetags(block_height, &ord_tx).await?;
-        doginals_pg::rollback_charms(block_height, &ord_tx).await?;
+        doginals_pg::rollback_dogespells(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_resolutions(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_burns(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_tickets(block_height, &ord_tx).await?;

@@ -130,7 +130,7 @@ pub fn parse_inscriptions_from_witness(
             transfers_pre_inscription: 0,
             koinupoint_post_inscription: String::new(),
             curse_type,
-            charms: 0,
+            dogespells: 0,
             unbound_sequence: None,
         };
         inscriptions.push((reveal_data, envelope.payload));
@@ -276,7 +276,7 @@ pub fn parse_inscriptions_from_standardized_tx(
             transfers_pre_inscription: 0,
             koinupoint_post_inscription: String::new(),
             curse_type,
-            charms: 0,
+            dogespells: 0,
             unbound_sequence: None,
         };
         

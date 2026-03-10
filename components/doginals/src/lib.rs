@@ -24,7 +24,7 @@ use {
 };
 
 pub use {
-  artifact::Artifact, cenotaph::Cenotaph, charm::Charm, decimal_koinu::DecimalKoinu, degree::Degree,
+  artifact::Artifact, cenotaph::Cenotaph, dogespell::Dogespell, decimal_koinu::DecimalKoinu, degree::Degree,
   edict::Edict, epoch::Epoch, etching::Etching, flaw::Flaw, height::Height, pile::Pile,
   rarity::Rarity, dune::Dune, dune_id::DuneId, dunestone::Dunestone, koinu::Koinu, koinu_point::KoinuPoint,
   spaced_dune::SpacedDune, terms::Terms,
@@ -58,7 +58,7 @@ fn default<T: Default>() -> T {
 
 mod artifact;
 mod cenotaph;
-pub mod charm;
+pub mod dogespell;
 mod decimal_koinu;
 mod degree;
 mod edict;

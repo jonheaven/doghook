@@ -63,7 +63,7 @@ pub struct OrdinalInscriptionRevealData {
     pub transfers_pre_inscription: u32,
     pub koinupoint_post_inscription: String,
     pub curse_type: Option<OrdinalInscriptionCurseType>,
-    pub charms: u16,
+    pub dogespells: u16,
     pub unbound_sequence: Option<i64>,
 }
 

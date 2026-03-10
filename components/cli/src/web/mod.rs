@@ -30,7 +30,7 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<String>,
 }
 
-/// Start the doghook web explorer server.
+/// Start the kabosu web explorer server.
 /// Returns the `broadcast::Sender` so the caller can inject the local webhook URL.
 pub async fn start_web_server(
     addr: SocketAddr,
@@ -61,9 +61,9 @@ pub async fn start_web_server(
         .route("/api/dns/names", get(get_dns_names))
         .route("/api/dogemap/claims", get(get_dogemap_claims))
         .route("/api/dogetags", get(get_dogetags))
-        .route("/charms/balance/:ticker/:address", get(get_charms_balance))
-        .route("/charms/history/:ticker/:address", get(get_charms_history))
-        .route("/charms/spells/:txid", get(get_charms_spells))
+        .route("/dogespells/balance/:ticker/:address", get(get_dogespells_balance))
+        .route("/dogespells/history/:ticker/:address", get(get_dogespells_history))
+        .route("/dogespells/spells/:txid", get(get_dogespells_spells))
         .route("/api/status", get(get_status))
         .route("/api/decode", get(decode_inscription))
         .route("/content/:inscription_id", get(get_inscription_content))
@@ -85,7 +85,7 @@ pub async fn start_web_server(
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    println!("🌐 Doghook explorer starting on http://{}", addr);
+    println!("🌐 Kabosu explorer starting on http://{}", addr);
     println!("   Visit http://{}/ to view the inscription explorer", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -97,7 +97,7 @@ pub async fn start_web_server(
 async fn health_check() -> impl IntoResponse {
     Json(json!({
         "status": "ok",
-        "service": "doghook-explorer"
+        "service": "kabosu-explorer"
     }))
 }
 
@@ -105,11 +105,11 @@ async fn openapi_spec() -> impl IntoResponse {
     Json(json!({
         "openapi": "3.0.3",
         "info": {
-            "title": "Doghook Explorer API",
-            "description": "REST API for the Doghook Doginals/Dunes indexer. All list endpoints support cursor-based pagination via `offset` and `limit` query parameters.",
+            "title": "Kabosu Explorer API",
+            "description": "REST API for the Kabosu Doginals/Dunes indexer. All list endpoints support cursor-based pagination via `offset` and `limit` query parameters.",
             "version": "1.0.0",
             "contact": {
-                "url": "https://github.com/yourorg/doghook"
+                "url": "https://github.com/yourorg/kabosu"
             }
         },
         "servers": [{ "url": "http://localhost:8080", "description": "Local" }],
@@ -248,39 +248,39 @@ async fn openapi_spec() -> impl IntoResponse {
                     "responses": { "200": { "description": "Dogetag list" } }
                 }
             },
-            "/charms/balance/{ticker}/{address}": {
+            "/dogespells/balance/{ticker}/{address}": {
                 "get": {
-                    "summary": "Get a Charms balance for one ticker/address pair",
-                    "operationId": "getCharmsBalance",
-                    "tags": ["Charms"],
+                    "summary": "Get a DogeSpells balance for one ticker/address pair",
+                    "operationId": "getDogeSpellsBalance",
+                    "tags": ["DogeSpells"],
                     "parameters": [
                         { "name": "ticker", "in": "path", "required": true, "schema": { "type": "string" } },
                         { "name": "address", "in": "path", "required": true, "schema": { "type": "string" } }
                     ],
-                    "responses": { "200": { "description": "Charms balance snapshot" } }
+                    "responses": { "200": { "description": "DogeSpells balance snapshot" } }
                 }
             },
-            "/charms/history/{ticker}/{address}": {
+            "/dogespells/history/{ticker}/{address}": {
                 "get": {
-                    "summary": "List Charms spells affecting one ticker/address pair",
-                    "operationId": "getCharmsHistory",
-                    "tags": ["Charms"],
+                    "summary": "List DogeSpells spells affecting one ticker/address pair",
+                    "operationId": "getDogeSpellsHistory",
+                    "tags": ["DogeSpells"],
                     "parameters": [
                         { "name": "ticker", "in": "path", "required": true, "schema": { "type": "string" } },
                         { "name": "address", "in": "path", "required": true, "schema": { "type": "string" } }
                     ],
-                    "responses": { "200": { "description": "Charms spell history" } }
+                    "responses": { "200": { "description": "DogeSpells spell history" } }
                 }
             },
-            "/charms/spells/{txid}": {
+            "/dogespells/spells/{txid}": {
                 "get": {
-                    "summary": "Fetch all Charms spells emitted by one transaction",
-                    "operationId": "getCharmsSpells",
-                    "tags": ["Charms"],
+                    "summary": "Fetch all DogeSpells spells emitted by one transaction",
+                    "operationId": "getDogeSpellsSpells",
+                    "tags": ["DogeSpells"],
                     "parameters": [
                         { "name": "txid", "in": "path", "required": true, "schema": { "type": "string" } }
                     ],
-                    "responses": { "200": { "description": "Charms spell list for the transaction" } }
+                    "responses": { "200": { "description": "DogeSpells spell list for the transaction" } }
                 }
             },
             "/api/lotto/tickets": {
@@ -352,7 +352,7 @@ async fn openapi_spec() -> impl IntoResponse {
                     "type": "object",
                     "properties": {
                         "status": { "type": "string", "example": "ok" },
-                        "service": { "type": "string", "example": "doghook-explorer" }
+                        "service": { "type": "string", "example": "kabosu-explorer" }
                     }
                 }
             }
@@ -365,8 +365,9 @@ async fn openapi_spec() -> impl IntoResponse {
             { "name": "DNS" },
             { "name": "Dogemap" },
             { "name": "Dogetag" },
-            { "name": "Charms" },
+            { "name": "DogeSpells" },
             { "name": "Lotto" }
         ]
     }))
 }
+
