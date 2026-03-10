@@ -6,11 +6,16 @@ RUN cargo build --release --bin doghook
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r doghook && useradd -r -g doghook -m doghook
+
 COPY --from=builder /app/target/release/doghook /usr/local/bin/doghook
 COPY doghook.toml /etc/doghook.toml
 COPY subsidies.json starting_koinu.json /etc/doghook/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chown -R doghook:doghook /etc/doghook /etc/doghook.toml
+
+USER doghook
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

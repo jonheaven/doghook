@@ -1,5 +1,6 @@
 use hmac::{Hmac, Mac};
 use prometheus::{register_int_counter, IntCounter};
+use rand::RngCore;
 use reqwest::Client;
 use serde_json::Value;
 use sha2::Sha256;
@@ -46,7 +47,11 @@ fn webhook_failure() -> &'static IntCounter {
 /// Spawn a background task to deliver `payload` to all `urls` with HMAC signing and
 /// exponential-backoff retries. Returns immediately — never blocks the indexer.
 ///
-/// If `hmac_secret` is `Some`, each request includes:
+/// Each delivery includes:
+///   `X-Doghook-Event: <event type from payload["event"]>`
+///   `_id: <16-byte random hex>` field stamped into the payload for deduplication
+///
+/// If `hmac_secret` is `Some`, each request also includes:
 ///   `X-Doghook-Signature: sha256=<hex(HMAC-SHA256(secret, body))>`
 ///
 /// Attempts: up to 5, with delays of 2 s / 4 s / 8 s / 16 s / 32 s.
@@ -57,6 +62,19 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
     }
     tokio::spawn(async move {
         let client = client();
+
+        // Stamp a unique idempotency key so receivers can deduplicate retried deliveries.
+        let mut payload = payload;
+        let mut id_bytes = [0u8; 16];
+        rand::rng().fill_bytes(&mut id_bytes);
+        payload["_id"] = serde_json::Value::String(hex::encode(id_bytes));
+
+        // Extract event type for the X-Doghook-Event header.
+        let event_type = payload["event"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
+
         let body = payload.to_string();
 
         let sig = hmac_secret.as_deref().map(|secret| {
@@ -72,6 +90,7 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
                 let mut builder = client
                     .post(url)
                     .header("Content-Type", "application/json")
+                    .header("X-Doghook-Event", &event_type)
                     .body(body.clone());
                 if let Some(ref s) = sig {
                     builder = builder.header("X-Doghook-Signature", s);

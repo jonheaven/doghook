@@ -75,6 +75,8 @@ pub async fn start_web_server(
         // SSE event stream + webhook receiver
         .route("/api/events", get(sse_events))
         .route("/api/webhook", post(receive_webhook))
+        // OpenAPI spec
+        .route("/openapi.json", get(openapi_spec))
         // Health check
         .route("/health", get(health_check))
         .layer(CorsLayer::permissive())
@@ -93,5 +95,239 @@ async fn health_check() -> impl IntoResponse {
     Json(json!({
         "status": "ok",
         "service": "doghook-explorer"
+    }))
+}
+
+async fn openapi_spec() -> impl IntoResponse {
+    Json(json!({
+        "openapi": "3.0.3",
+        "info": {
+            "title": "Doghook Explorer API",
+            "description": "REST API for the Doghook Doginals/Dunes indexer. All list endpoints support cursor-based pagination via `offset` and `limit` query parameters.",
+            "version": "1.0.0",
+            "contact": {
+                "url": "https://github.com/yourorg/doghook"
+            }
+        },
+        "servers": [{ "url": "http://localhost:8080", "description": "Local" }],
+        "paths": {
+            "/health": {
+                "get": {
+                    "summary": "Health check",
+                    "operationId": "healthCheck",
+                    "tags": ["System"],
+                    "responses": {
+                        "200": {
+                            "description": "Service is healthy",
+                            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } }
+                        }
+                    }
+                }
+            },
+            "/api/status": {
+                "get": {
+                    "summary": "Indexer sync status",
+                    "operationId": "getStatus",
+                    "tags": ["System"],
+                    "responses": {
+                        "200": { "description": "Current chain tip and sync progress" }
+                    }
+                }
+            },
+            "/api/inscriptions": {
+                "get": {
+                    "summary": "List inscriptions",
+                    "operationId": "getInscriptions",
+                    "tags": ["Doginals"],
+                    "parameters": [
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+                        { "name": "mime_type", "in": "query", "schema": { "type": "string" }, "description": "Filter by MIME type prefix, e.g. image/png" }
+                    ],
+                    "responses": { "200": { "description": "Paginated inscription list" } }
+                }
+            },
+            "/api/inscriptions/recent": {
+                "get": {
+                    "summary": "Most recently indexed inscriptions",
+                    "operationId": "getRecentInscriptions",
+                    "tags": ["Doginals"],
+                    "parameters": [
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10, "maximum": 50 } }
+                    ],
+                    "responses": { "200": { "description": "Recent inscription list" } }
+                }
+            },
+            "/content/{inscription_id}": {
+                "get": {
+                    "summary": "Raw inscription content",
+                    "operationId": "getInscriptionContent",
+                    "tags": ["Doginals"],
+                    "parameters": [
+                        { "name": "inscription_id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "<txid>i<index>" }
+                    ],
+                    "responses": {
+                        "200": { "description": "Raw bytes with original Content-Type" },
+                        "404": { "description": "Inscription not found" }
+                    }
+                }
+            },
+            "/api/decode": {
+                "get": {
+                    "summary": "Decode a raw transaction for inscription envelopes",
+                    "operationId": "decodeInscription",
+                    "tags": ["Doginals"],
+                    "parameters": [
+                        { "name": "txid", "in": "query", "required": true, "schema": { "type": "string" } }
+                    ],
+                    "responses": { "200": { "description": "Decoded inscription envelope data" } }
+                }
+            },
+            "/api/drc20/tokens": {
+                "get": {
+                    "summary": "List DRC-20 tokens",
+                    "operationId": "getDrc20Tokens",
+                    "tags": ["DRC-20"],
+                    "parameters": [
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+                        { "name": "tick", "in": "query", "schema": { "type": "string" }, "description": "Filter by ticker symbol" }
+                    ],
+                    "responses": { "200": { "description": "DRC-20 token list" } }
+                }
+            },
+            "/api/dunes/tokens": {
+                "get": {
+                    "summary": "List Dune tokens",
+                    "operationId": "getDunesTokens",
+                    "tags": ["Dunes"],
+                    "parameters": [
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+                    ],
+                    "responses": { "200": { "description": "Dune token list" } }
+                }
+            },
+            "/api/dns/names": {
+                "get": {
+                    "summary": "List registered DNS names",
+                    "operationId": "getDnsNames",
+                    "tags": ["DNS"],
+                    "parameters": [
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+                        { "name": "name", "in": "query", "schema": { "type": "string" }, "description": "Exact name lookup" }
+                    ],
+                    "responses": { "200": { "description": "DNS name list" } }
+                }
+            },
+            "/api/dogemap/claims": {
+                "get": {
+                    "summary": "List Dogemap block claims",
+                    "operationId": "getDogemapClaims",
+                    "tags": ["Dogemap"],
+                    "parameters": [
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+                    ],
+                    "responses": { "200": { "description": "Dogemap claim list" } }
+                }
+            },
+            "/api/dogetags": {
+                "get": {
+                    "summary": "List Dogetag on-chain graffiti",
+                    "operationId": "getDogetags",
+                    "tags": ["Dogetag"],
+                    "parameters": [
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+                    ],
+                    "responses": { "200": { "description": "Dogetag list" } }
+                }
+            },
+            "/api/lotto/tickets": {
+                "get": {
+                    "summary": "List lotto tickets",
+                    "operationId": "getLottoTickets",
+                    "tags": ["Lotto"],
+                    "parameters": [
+                        { "name": "lotto_id", "in": "query", "schema": { "type": "string" } },
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+                    ],
+                    "responses": { "200": { "description": "Lotto ticket list" } }
+                }
+            },
+            "/api/lotto/winners": {
+                "get": {
+                    "summary": "List lotto winners",
+                    "operationId": "getLottoWinners",
+                    "tags": ["Lotto"],
+                    "parameters": [
+                        { "name": "lotto_id", "in": "query", "schema": { "type": "string" } },
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+                    ],
+                    "responses": { "200": { "description": "Lotto winner list" } }
+                }
+            },
+            "/api/lotto/verify": {
+                "get": {
+                    "summary": "Verify a lotto ticket's drawn numbers",
+                    "operationId": "lottoVerify",
+                    "tags": ["Lotto"],
+                    "parameters": [
+                        { "name": "ticket_id", "in": "query", "required": true, "schema": { "type": "string" } }
+                    ],
+                    "responses": { "200": { "description": "Ticket verification result" } }
+                }
+            },
+            "/api/events": {
+                "get": {
+                    "summary": "Server-Sent Events stream of live indexer events",
+                    "operationId": "sseEvents",
+                    "tags": ["System"],
+                    "responses": {
+                        "200": {
+                            "description": "SSE stream (text/event-stream)",
+                            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+                        }
+                    }
+                }
+            },
+            "/api/webhook": {
+                "post": {
+                    "summary": "Internal webhook receiver — fans events out to SSE subscribers",
+                    "operationId": "receiveWebhook",
+                    "tags": ["System"],
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "type": "object" } } }
+                    },
+                    "responses": { "200": { "description": "Accepted" } }
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "HealthResponse": {
+                    "type": "object",
+                    "properties": {
+                        "status": { "type": "string", "example": "ok" },
+                        "service": { "type": "string", "example": "doghook-explorer" }
+                    }
+                }
+            }
+        },
+        "tags": [
+            { "name": "System" },
+            { "name": "Doginals" },
+            { "name": "DRC-20" },
+            { "name": "Dunes" },
+            { "name": "DNS" },
+            { "name": "Dogemap" },
+            { "name": "Dogetag" },
+            { "name": "Lotto" }
+        ]
     }))
 }
