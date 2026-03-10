@@ -1,4 +1,5 @@
 use hmac::{Hmac, Mac};
+use prometheus::{register_int_counter, IntCounter};
 use reqwest::Client;
 use serde_json::Value;
 use sha2::Sha256;
@@ -7,10 +8,39 @@ use std::sync::OnceLock;
 type HmacSha256 = Hmac<Sha256>;
 
 // Shared client so all webhook tasks reuse the same connection pool.
+// 30-second timeout prevents a hung receiver from holding connections indefinitely.
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
 fn client() -> &'static Client {
-    CLIENT.get_or_init(Client::new)
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("failed to build reqwest client")
+    })
+}
+
+static WEBHOOK_SUCCESS: OnceLock<IntCounter> = OnceLock::new();
+static WEBHOOK_FAILURE: OnceLock<IntCounter> = OnceLock::new();
+
+fn webhook_success() -> &'static IntCounter {
+    WEBHOOK_SUCCESS.get_or_init(|| {
+        register_int_counter!(
+            "doghook_webhook_deliveries_total",
+            "Successful webhook deliveries"
+        )
+        .unwrap()
+    })
+}
+
+fn webhook_failure() -> &'static IntCounter {
+    WEBHOOK_FAILURE.get_or_init(|| {
+        register_int_counter!(
+            "doghook_webhook_failures_total",
+            "Webhook deliveries that exhausted all retries"
+        )
+        .unwrap()
+    })
 }
 
 /// Spawn a background task to deliver `payload` to all `urls` with HMAC signing and
@@ -47,16 +77,21 @@ pub fn fire_webhooks(urls: Vec<String>, hmac_secret: Option<String>, payload: Va
                     builder = builder.header("X-Doghook-Signature", s);
                 }
                 match builder.send().await {
-                    Ok(r) if r.status().is_success() => break,
+                    Ok(r) if r.status().is_success() => {
+                        webhook_success().inc();
+                        break;
+                    }
                     Ok(r) => {
                         if attempts >= 4 {
                             eprintln!("[doghook] webhook {url} gave up after {attempts} retries (status {})", r.status());
+                            webhook_failure().inc();
                             break;
                         }
                     }
                     Err(e) => {
                         if attempts >= 4 {
                             eprintln!("[doghook] webhook {url} gave up after {attempts} retries: {e}");
+                            webhook_failure().inc();
                             break;
                         }
                     }
