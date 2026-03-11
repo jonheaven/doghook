@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="kabosu logo" width="200" />
+  <img src="logo.png" alt="kabosu logo" />
 </p>
 
 # kabosu — Dogecoin Indexer
