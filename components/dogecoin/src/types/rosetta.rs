@@ -28,6 +28,10 @@ impl BlockIdentifier {
     pub fn get_hash_bytes(&self) -> Vec<u8> {
         hex::decode(self.get_hash_bytes_str()).unwrap()
     }
+
+    pub fn has_known_hash(&self) -> bool {
+        self.hash != "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
 }
 
 impl Display for BlockIdentifier {

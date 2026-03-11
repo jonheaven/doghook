@@ -28,7 +28,8 @@ use crate::{
     block_pool::BlockPool,
     pipeline::{
         blk::start_file_block_download_pipeline,
-        block_processor_runloop, download_rpc_blocks, rpc::build_http_client,
+        block_processor_runloop, download_rpc_blocks,
+        rpc::{build_http_client, retrieve_block_hash_with_retry},
         wait_for_thread_finish, BlockProcessor, BlockProcessorCommand,
     },
     types::{DogecoinBlockData, DogecoinNetwork, BlockIdentifier},
@@ -98,12 +99,6 @@ pub async fn start_dogecoin_indexer(
     let block_pool = block_pool_arc.clone();
     // Block cache that will keep block data in memory while it is prepared to be sent to indexers.
     let block_store_arc = Arc::new(Mutex::new(HashMap::new()));
-
-    if let Some(index_chain_tip) = &indexer.chain_tip {
-        try_info!(ctx, "Index chain tip is at {}", index_chain_tip);
-    } else {
-        try_info!(ctx, "Index is empty");
-    }
 
     // -----------------------------------------------------------------------
     // Decide on data source based on config.dogecoin.data_source.
@@ -183,6 +178,55 @@ pub async fn start_dogecoin_indexer(
             }
         }
     };
+
+    if let Some(index_chain_tip) = indexer.chain_tip.as_mut() {
+        if !index_chain_tip.has_known_hash() {
+            if let Some(reader) = blk_reader.as_ref() {
+                if let Some(hash) = reader.hash_at_height(index_chain_tip.index as u32) {
+                    index_chain_tip.hash = hash;
+                    try_info!(
+                        ctx,
+                        "Resolved index chain tip hash from .blk index at height #{}",
+                        index_chain_tip.index
+                    );
+                }
+            }
+
+            if !index_chain_tip.has_known_hash() {
+                match retrieve_block_hash_with_retry(
+                    &http_client,
+                    &index_chain_tip.index,
+                    &config.dogecoin,
+                    ctx,
+                )
+                .await
+                {
+                    Ok(hash) => {
+                        index_chain_tip.hash = format!("0x{}", hash);
+                        try_info!(
+                            ctx,
+                            "Resolved index chain tip hash from RPC at height #{}",
+                            index_chain_tip.index
+                        );
+                    }
+                    Err(e) => {
+                        try_info!(
+                            ctx,
+                            "Index chain tip hash unavailable at height #{} ({e}); \
+                             continuing without fork-pool priming",
+                            index_chain_tip.index
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(index_chain_tip) = &indexer.chain_tip {
+        try_info!(ctx, "Index chain tip is at {}", index_chain_tip);
+    } else {
+        try_info!(ctx, "Index is empty");
+    }
 
     // Build the [BlockProcessor] that will be used to ingest and standardize blocks from the
     // Dogecoin node. This processor will then send blocks to the [Indexer] for indexing.

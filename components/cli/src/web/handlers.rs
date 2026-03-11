@@ -9,6 +9,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{
+        Redirect,
         sse::{Event, KeepAlive, Sse},
         Html, IntoResponse, Response,
     },
@@ -31,6 +32,9 @@ use dogecoin::bitcoincore_rpc::RpcApi;
 use doginals::envelope::ParsedEnvelope;
 
 use super::AppState;
+
+const KOINU_RELIC_TEMPLATE: &str =
+    include_str!("../../../../../koinu-relic/src/inscription.html");
 
 #[derive(Deserialize)]
 pub struct PaginationParams {
@@ -975,6 +979,17 @@ pub async fn dunes_page() -> Html<&'static str> {
 
 pub async fn lotto_page() -> Html<&'static str> {
     Html(include_str!("../../static/index.html"))
+}
+
+pub async fn koinu_relics_page() -> Redirect {
+    Redirect::to("/static/koinu-relic-auto-theme.html")
+}
+
+pub async fn koinu_relic_template() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        KOINU_RELIC_TEMPLATE,
+    )
 }
 
 #[derive(Serialize)]

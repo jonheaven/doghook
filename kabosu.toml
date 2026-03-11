@@ -113,9 +113,12 @@ enabled = true
 #   { "event": "dogemap.claimed", "block_number": N,
 #     "inscription_id": "<txid>i0", "claim_height": N, "claim_timestamp": N }
 [webhooks]
-enabled = false
-urls = []
-# urls = ["https://your-server.example.com/hook"]
+enabled = true
+# wzrd.dog BlockWatch webhook receiver.
+# For local dev use: "http://localhost:3000/api/kabosu-webhook"
+urls = ["https://wzrd.dog/api/kabosu-webhook"]
+# HMAC-SHA256 signing secret — set via WEBHOOK_HMAC_SECRET env var (do not commit here)
+# hmac_secret = ""
 
 # Override the default start height for targeted testing.
 # Wipe data/ and all Postgres databases before changing this.

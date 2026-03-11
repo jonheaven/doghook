@@ -151,6 +151,13 @@ impl BlkReader {
         self.index.keys().copied().max().unwrap_or(0)
     }
 
+    /// Resolve the canonical block hash stored in the `.blk` index for a height.
+    pub fn hash_at_height(&self, height: u32) -> Option<String> {
+        self.index
+            .get(&height)
+            .map(|(_, _, hash)| format!("0x{}", hash))
+    }
+
     /// Read and deserialize a block by height.
     ///
     /// Returns `Ok(None)` when the height is not yet in the on-disk index

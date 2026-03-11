@@ -276,8 +276,14 @@ pub(crate) async fn block_processor_runloop(
 ) -> Result<(), String> {
     // Before starting the loop, check if the index already has progress. If so, prime the block pool with the current tip.
     if let Some(index_chain_tip) = index_chain_tip {
-        if index_chain_tip.index >= sequence_start_block_height {
+        if index_chain_tip.index >= sequence_start_block_height && index_chain_tip.has_known_hash() {
             initialize_block_pool(block_pool, index_chain_tip, http_client, config, ctx).await?;
+        } else if index_chain_tip.index >= sequence_start_block_height {
+            try_info!(
+                ctx,
+                "Skipping fork-pool priming at #{} because the stored tip hash is unknown",
+                index_chain_tip.index
+            );
         }
     }
 

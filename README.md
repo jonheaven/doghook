@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="kabosu logo" width="200" />
+</p>
+
 # kabosu — Dogecoin Indexer
 
 The fastest, lightest, most selective Doginals indexer for Dogecoin.

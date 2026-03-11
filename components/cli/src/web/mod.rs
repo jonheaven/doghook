@@ -80,6 +80,8 @@ pub async fn start_web_server(
         .route("/drc20", get(drc20_page))
         .route("/dunes", get(dunes_page))
         .route("/lotto", get(lotto_page))
+        .route("/koinu-relics", get(koinu_relics_page))
+        .route("/static/koinu-relic-auto-theme.html", get(koinu_relic_template))
         // Static assets
         .route("/wallet.js", get(wallet_js))
         // SSE event stream + webhook receiver
