@@ -1,6 +1,6 @@
-# Marketplace TODO
+# DoginalMarket TODO
 
-As of March 11, 2026, the `kabosu` marketplace backend has working auth challenges/sessions, trader profiles/activity, listings, offers, auction creation, auction bids, auction bid cancellation, auction settlement, signed-intent verification, and RPC-backed transaction broadcast/status checks.
+As of March 11, 2026, the `kabosu` DoginalMarket backend has working auth challenges/sessions, trader profiles/activity, listings, offers, auction creation, auction bids, auction bid cancellation, auction settlement, signed-intent verification, and RPC-backed transaction broadcast/status checks.
 
 This file tracks what is still open, ordered from easier follow-ups to harder systems work.
 
@@ -42,10 +42,10 @@ Acceptance:
 
 - [ ] Add canonical signed-intent validation for offer cancellation (`offer_cancel`) instead of session-only cancellation.
 - [ ] Decide whether listing cancellation should remain session-only or also require a signed intent.
-- [ ] Normalize all signed marketplace write routes around one envelope shape and one nonce policy.
+- [ ] Normalize all signed DoginalMarket write routes around one envelope shape and one nonce policy.
 
 Acceptance:
-- Every marketplace action that moves economic state either uses session auth by design and is documented as such, or is protected by canonical Dogecoin signed intents.
+- Every DoginalMarket action that moves economic state either uses session auth by design and is documented as such, or is protected by canonical Dogecoin signed intents.
 
 ### 4. Upgrade Order Build From Template To Real Transaction Construction
 
@@ -84,7 +84,7 @@ Acceptance:
 - [ ] Keep `GET /v1/tx/:txid/status` and persisted marketplace state consistent.
 
 Acceptance:
-- Marketplace state advances automatically after broadcast instead of requiring clients to poll and infer finality themselves.
+- DoginalMarket state advances automatically after broadcast instead of requiring clients to poll and infer finality themselves.
 
 ### 8. Add Reorg-Aware Rollback / Invalidation
 
@@ -93,12 +93,12 @@ Acceptance:
 - [ ] Mark invalidated marketplace records explicitly.
 
 Acceptance:
-- Terminal marketplace states are reversible when Dogecoin chain history is reorganized.
+- Terminal DoginalMarket states are reversible when Dogecoin chain history is reorganized.
 
 ### 9. Add Request Hardening And Operational Controls
 
 - [ ] Add rate limiting to auth, submit, offer, bid, and settlement routes.
-- [ ] Add trace IDs / structured request logging for marketplace routes.
+- [ ] Add trace IDs / structured request logging for DoginalMarket routes.
 - [ ] Add explicit abuse controls for auth challenge creation and signature verification.
 
 Acceptance:
@@ -115,7 +115,7 @@ Acceptance:
 - [ ] Document retry / delivery semantics.
 
 Acceptance:
-- External services can react to marketplace state transitions without scraping polling endpoints.
+- External services can react to DoginalMarket state transitions without scraping polling endpoints.
 
 ### 11. Add Integration And Migration Testing
 
@@ -123,13 +123,13 @@ Acceptance:
 - [ ] Add tests for signed-intent replay rejection.
 - [ ] Add tests for listing build -> submit -> confirm lifecycle.
 - [ ] Add tests for auction bid race / anti-sniping extension / settlement.
-- [ ] Run live migration smoke tests for `V29__marketplace.sql` and `V30__marketplace_auth_bids.sql`.
+- [ ] Run live migration smoke tests for `V29__doginalmarket.sql` and `V30__doginalmarket_auth_bids.sql`.
 
 Acceptance:
-- Marketplace flows are covered by repeatable tests instead of compile-only validation.
+- DoginalMarket flows are covered by repeatable tests instead of compile-only validation.
 
 ## Notes
 
 - `POST /v1/orders/:listing_id/submit` currently accepts raw transaction hex in the `signedPsbt` field for API compatibility. This is temporary.
-- `GET /v1/tx/:txid/status` now checks RPC confirmations, but no background state reconciler updates marketplace records yet.
+- `GET /v1/tx/:txid/status` now checks RPC confirmations, but no background state reconciler updates DoginalMarket records yet.
 - `POST /v1/traders/:address/x/verify` is currently a stateful placeholder endpoint, not a real X OAuth integration.

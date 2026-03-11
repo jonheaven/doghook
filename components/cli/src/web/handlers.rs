@@ -382,7 +382,7 @@ pub async fn get_lotto_winners(
     Ok(Json(winners))
 }
 
-/// Query params for GET /api/lotto/verify
+/// Query params for GET /api/dogelotto/verify
 #[derive(Deserialize)]
 pub struct LottoVerifyParams {
     /// Hex block hash of the draw block (the target u256).
@@ -393,7 +393,7 @@ pub struct LottoVerifyParams {
     pub lotto_id: Option<String>,
 }
 
-/// Response for GET /api/lotto/verify
+/// Response for GET /api/dogelotto/verify
 /// All computations are derived purely from Dogecoin chain data and are 100% verifiable.
 #[derive(Serialize)]
 pub struct LottoVerifyResponse {
@@ -1798,7 +1798,7 @@ async fn marketplace_fetch_tx_status(
 pub async fn marketplace_health(State(state): State<AppState>) -> impl IntoResponse {
     Json(json!({
         "status": "ok",
-        "service": "kabosu-marketplace",
+        "service": "kabosu-doginalmarket",
         "network": format!("{:?}", state.dogecoin_config.network),
     }))
 }
@@ -4655,13 +4655,13 @@ pub async fn settle_marketplace_auction(
 /// Query params for GET /api/dmp/listings
 #[derive(Deserialize)]
 pub struct DmpListingsParams {
-    #[serde(default = "default_limit")]
+    #[serde(default = "default_dmp_limit")]
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
 }
 
-fn default_limit() -> i64 {
+fn default_dmp_limit() -> i64 {
     50
 }
 

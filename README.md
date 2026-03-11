@@ -27,10 +27,10 @@ Both projects are completely independent codebases. kabosu does not import dog.
 | Dunes | Full | `kabosu dunes service start` |
 | DNS (Dogecoin Name System) | Full — 28 namespaces, first-wins, reorg-safe | `kabosu dns resolve`, `kabosu dns list` |
 | Dogemap (block claims) | Full — first-wins, reorg-safe | `kabosu dogemap status`, `kabosu dogemap list` |
-| DogeLotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `kabosu lotto deploy`, `kabosu lotto mint`, `kabosu lotto list`, `kabosu lotto status`, `kabosu lotto burn`, `kabosu lotto burners` |
+| DogeLotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `kabosu lotto deploy`, `kabosu lotto mint`, `kabosu lotto list`, `kabosu lotto status`, `kabosu lotto burn`, `kabosu lotto burners`, `kabosu doginals index sync --only dogelotto` |
 | Dogetag (on-chain graffiti) | Full — OP_RETURN text messages, reorg-safe | `kabosu dogetag list`, `kabosu dogetag search`, `kabosu dogetag address`, `kabosu dogetag send` |
 | DogeSpells | Full — OP_RETURN magic-prefix + CBOR spells, balances, NFT metadata snapshots, reorg-safe | `kabosu doginals index sync --only dogespells` plus `/dogespells/*` API routes |
-| DMP (DoginalMarket Protocol) | Full — inscription-based marketplace: listings, bids, settlements, cancels; reorg-safe | `GET /api/dmp/listings` |
+| DMP (DoginalMarket Protocol) | Full — inscription-based marketplace: listings, bids, settlements, cancels; reorg-safe | `kabosu doginals index sync --only dmp`, `GET /api/dmp/listings` |
 
 ### DogeLotto
 
@@ -41,6 +41,12 @@ Both projects are completely independent codebases. kabosu does not import dog.
 - Inscribes the `DogeLotto` mint JSON (with `"p":"DogeLotto"`) in the same transaction.
 
 This lets the indexer verify payment and tip commitments trustlessly.
+
+Run a dedicated DogeLotto-only sync:
+
+```bash
+kabosu doginals index sync --only dogelotto --config-path kabosu.toml
+```
 
 Example deploy payload with explicit ticket cutoff (if omitted, defaults to `draw_block - 10`):
 
@@ -274,6 +280,12 @@ Enable in config (default `true` when section is absent):
 enabled = true
 ```
 
+Run a dedicated DMP-only sync:
+
+```bash
+kabosu doginals index sync --only dmp --config-path kabosu.toml
+```
+
 **Webhook events:** `dmp.listing`, `dmp.bid`, `dmp.settle`, `dmp.cancel`
 
 **API:**
@@ -327,11 +339,12 @@ kabosu doginals service start --config-path kabosu.toml
 - `GET /api/inscriptions/recent`
 - `GET /api/drc20/tokens`
 - `GET /api/dunes/tokens`
-- `GET /api/lotto/tickets`
-- `GET /api/lotto/winners`
+- `GET /api/dogelotto/tickets`
+- `GET /api/dogelotto/winners`
 - `GET /api/dns/names`
 - `GET /api/dogemap/claims`
 - `GET /api/dogetags`
+- `GET /api/dmp/listings`
 - `GET /dogespells/balance/:ticker/:address`
 - `GET /dogespells/history/:ticker/:address`
 - `GET /dogespells/spells/:txid`
@@ -369,8 +382,9 @@ The web explorer also exposes JSON APIs:
 - `GET /api/inscriptions?limit=50&offset=0` — Paginated inscriptions
 - `GET /api/drc20/tokens?limit=50` — DRC-20 tokens
 - `GET /api/dunes/tokens?limit=50` — Dunes tokens
-- `GET /api/lotto/tickets?limit=50` — Lotto tickets
-- `GET /api/lotto/winners?limit=50` — Lotto winners
+- `GET /api/dogelotto/tickets?limit=50` — DogeLotto tickets
+- `GET /api/dogelotto/winners?limit=50` — DogeLotto winners
+- `GET /api/dmp/listings?limit=50` — Active DMP listings
 - `GET /health` — Health check
 
 All APIs return JSON. Use these to build custom dashboards or integrations.
@@ -778,4 +792,3 @@ The binary is at `target/release/kabosu`.
 ---
 
 Made with love for the Doge community. Much index. Very fast. Wow.
-

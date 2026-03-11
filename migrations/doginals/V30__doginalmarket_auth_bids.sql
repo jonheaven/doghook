@@ -1,3 +1,5 @@
+-- DoginalMarket Protocol (DMP) auth, signed-intent, and auction-bid tables.
+
 CREATE TABLE IF NOT EXISTS marketplace_auth_challenges (
   id TEXT PRIMARY KEY,
   address TEXT NOT NULL,

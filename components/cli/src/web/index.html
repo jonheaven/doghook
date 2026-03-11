@@ -97,20 +97,20 @@
       const root = document.getElementById('tickets');
       root.innerHTML = '<p class="muted">Loading...</p>';
 
-      const cfg = await fetchJson('/api/lotto/config');
+      const cfg = await fetchJson('/api/dogelotto/config');
       state.burnAddress = cfg.burn_address || '';
 
       if (address) {
-        const points = await fetchJson(`/api/lotto/burn-points/${encodeURIComponent(address)}`);
+        const points = await fetchJson(`/api/dogelotto/burn-points/${encodeURIComponent(address)}`);
         renderBurnPoints((points && points.burn_points) || 0);
       } else {
         document.getElementById('burnPoints').textContent = 'Enter wallet address to view Burn Points.';
       }
 
-      const list = await fetchJson('/api/lotto/list?limit=3&offset=0');
+      const list = await fetchJson('/api/dogelotto/list?limit=3&offset=0');
       const tickets = [];
       for (const lotto of list.items || []) {
-        const data = await fetchJson(`/api/lotto/${encodeURIComponent(lotto.lotto_id)}/tickets?limit=6&offset=0`);
+        const data = await fetchJson(`/api/dogelotto/${encodeURIComponent(lotto.lotto_id)}/tickets?limit=6&offset=0`);
         tickets.push(...(data.items || []));
       }
 

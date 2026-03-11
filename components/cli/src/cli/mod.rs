@@ -241,6 +241,7 @@ fn apply_only_protocol_selection(
     config.protocols.dogetag.enabled = false;
     config.protocols.lotto.enabled = false;
     config.protocols.dogespells.enabled = false;
+    config.protocols.dmp.enabled = false;
 
     if let Some(doginals) = config.doginals.as_mut() {
         doginals.predicates = Some(DoginalsPredicatesConfig {
@@ -260,11 +261,12 @@ fn apply_only_protocol_selection(
         "dns" => config.protocols.dns.enabled = true,
         "dogemap" => config.protocols.dogemap.enabled = true,
         "dogetag" => config.protocols.dogetag.enabled = true,
-        "lotto" => config.protocols.lotto.enabled = true,
+        "dogelotto" | "lotto" => config.protocols.lotto.enabled = true,
         "dogespells" => config.protocols.dogespells.enabled = true,
+        "dmp" | "doginalmarket" => config.protocols.dmp.enabled = true,
         other => {
             return Err(format!(
-                "unsupported --only value '{}' (expected one of: dns, dogemap, dogetag, lotto, dogespells)",
+                "unsupported --only value '{}' (expected one of: dns, dogemap, dogetag, dogelotto, dogespells, dmp)",
                 other
             ));
         }

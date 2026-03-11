@@ -299,8 +299,8 @@
         async function checkLiveLottoEvents() {
             try {
                 const [ticketRes, winnerRes, dnsRes, dogemapRes] = await Promise.all([
-                    fetch('/api/lotto/tickets?limit=1'),
-                    fetch('/api/lotto/winners?limit=1'),
+                    fetch('/api/dogelotto/tickets?limit=1'),
+                    fetch('/api/dogelotto/winners?limit=1'),
                     fetch('/api/dns/names?limit=1'),
                     fetch('/api/dogemap/claims?limit=1')
                 ]);
@@ -316,16 +316,16 @@
                 const latestDogemap = latestDogemapClaims[0];
 
                 if (latestTicket && notificationsArmed && lastSeenTicketId && latestTicket.ticket_id !== lastSeenTicketId) {
-                    const msg = `New lotto mint: ${latestTicket.lotto_name} by ${latestTicket.player_address.slice(0, 10)}...`;
+                    const msg = `New DogeLotto mint: ${latestTicket.lotto_name} by ${latestTicket.player_address.slice(0, 10)}...`;
                     showToast(msg, 'info');
-                    maybeShowBrowserNotification('New Doge-Lotto Ticket', msg);
+                    maybeShowBrowserNotification('New DogeLotto Ticket', msg);
                 }
 
                 if (latestWinner && notificationsArmed && lastSeenWinnerTicketId && latestWinner.ticket_id !== lastSeenWinnerTicketId) {
                     const payout = ((latestWinner.gross_payout_koinu - latestWinner.tip_deduction_koinu) / 100000000).toFixed(2);
                     const msg = `Winner detected: ${latestWinner.lotto_name} paid ${payout} DOGE`;
                     showToast(msg, 'success');
-                    maybeShowBrowserNotification('Doge-Lotto Winner', msg);
+                    maybeShowBrowserNotification('DogeLotto Winner', msg);
                 }
 
                 if (latestDns && notificationsArmed && lastSeenDnsInscriptionId && latestDns.inscription_id !== lastSeenDnsInscriptionId) {
@@ -595,8 +595,8 @@
         async function loadLotto() {
             try {
                 const [ticketsRes, winnersRes] = await Promise.all([
-                    fetch('/api/lotto/tickets?limit=20'),
-                    fetch('/api/lotto/winners?limit=20')
+                    fetch('/api/dogelotto/tickets?limit=20'),
+                    fetch('/api/dogelotto/winners?limit=20')
                 ]);
                 const tickets = await ticketsRes.json();
                 const winners = await winnersRes.json();

@@ -357,8 +357,8 @@
         async function loadLotto() {
             try {
                 const [ticketsRes, winnersRes] = await Promise.all([
-                    fetch('/api/lotto/tickets?limit=20'),
-                    fetch('/api/lotto/winners?limit=20')
+                    fetch('/api/dogelotto/tickets?limit=20'),
+                    fetch('/api/dogelotto/winners?limit=20')
                 ]);
                 const tickets = await ticketsRes.json();
                 const winners = await winnersRes.json();

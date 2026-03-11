@@ -55,9 +55,9 @@ pub async fn start_web_server(
         .route("/api/inscriptions/recent", get(get_recent_inscriptions))
         .route("/api/drc20/tokens", get(get_drc20_tokens))
         .route("/api/dunes/tokens", get(get_dunes_tokens))
-        .route("/api/lotto/tickets", get(get_lotto_tickets))
-        .route("/api/lotto/winners", get(get_lotto_winners))
-        .route("/api/lotto/verify", get(lotto_verify))
+        .route("/api/dogelotto/tickets", get(get_lotto_tickets))
+        .route("/api/dogelotto/winners", get(get_lotto_winners))
+        .route("/api/dogelotto/verify", get(lotto_verify))
         .route("/api/dns/names", get(get_dns_names))
         .route("/api/dogemap/claims", get(get_dogemap_claims))
         .route("/api/dogetags", get(get_dogetags))
@@ -89,7 +89,7 @@ pub async fn start_web_server(
         .route("/openapi.json", get(openapi_spec))
         // Health check
         .route("/health", get(health_check))
-        // Marketplace API scaffolding
+        // DoginalMarket API scaffolding
         .route(
             "/v1/auth/challenge",
             post(create_marketplace_auth_challenge),
@@ -365,41 +365,41 @@ async fn openapi_spec() -> impl IntoResponse {
                     "responses": { "200": { "description": "DogeSpells spell list for the transaction" } }
                 }
             },
-            "/api/lotto/tickets": {
+            "/api/dogelotto/tickets": {
                 "get": {
-                    "summary": "List lotto tickets",
-                    "operationId": "getLottoTickets",
-                    "tags": ["Lotto"],
+                    "summary": "List DogeLotto tickets",
+                    "operationId": "getDogeLottoTickets",
+                    "tags": ["DogeLotto"],
                     "parameters": [
-                        { "name": "lotto_id", "in": "query", "schema": { "type": "string" } },
                         { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
                         { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
                     ],
-                    "responses": { "200": { "description": "Lotto ticket list" } }
+                    "responses": { "200": { "description": "DogeLotto ticket list" } }
                 }
             },
-            "/api/lotto/winners": {
+            "/api/dogelotto/winners": {
                 "get": {
-                    "summary": "List lotto winners",
-                    "operationId": "getLottoWinners",
-                    "tags": ["Lotto"],
+                    "summary": "List DogeLotto winners",
+                    "operationId": "getDogeLottoWinners",
+                    "tags": ["DogeLotto"],
                     "parameters": [
-                        { "name": "lotto_id", "in": "query", "schema": { "type": "string" } },
                         { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
                         { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
                     ],
-                    "responses": { "200": { "description": "Lotto winner list" } }
+                    "responses": { "200": { "description": "DogeLotto winner list" } }
                 }
             },
-            "/api/lotto/verify": {
+            "/api/dogelotto/verify": {
                 "get": {
-                    "summary": "Verify a lotto ticket's drawn numbers",
-                    "operationId": "lottoVerify",
-                    "tags": ["Lotto"],
+                    "summary": "Verify a DogeLotto ticket's drawn numbers",
+                    "operationId": "dogeLottoVerify",
+                    "tags": ["DogeLotto"],
                     "parameters": [
-                        { "name": "ticket_id", "in": "query", "required": true, "schema": { "type": "string" } }
+                        { "name": "block_hash", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Draw block hash as a 32-byte hex string" },
+                        { "name": "numbers", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Comma-separated seed numbers from the ticket" },
+                        { "name": "lotto_id", "in": "query", "schema": { "type": "string" }, "description": "Optional DogeLotto id for winner lookup" }
                     ],
-                    "responses": { "200": { "description": "Ticket verification result" } }
+                    "responses": { "200": { "description": "DogeLotto ticket verification result" } }
                 }
             },
             "/api/events": {
@@ -448,7 +448,8 @@ async fn openapi_spec() -> impl IntoResponse {
             { "name": "Dogemap" },
             { "name": "Dogetag" },
             { "name": "DogeSpells" },
-            { "name": "Lotto" }
+            { "name": "DogeLotto" },
+            { "name": "DMP" }
         ]
     }))
 }

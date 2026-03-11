@@ -85,6 +85,7 @@ enabled = true
 
 # DogeLotto meta-protocol. Inscriptions with "p":"DogeLotto" are indexed.
 # Set enabled = false to skip all DogeLotto events.
+# For a one-off dedicated DogeLotto sync: `kabosu doginals index sync --only dogelotto --config-path kabosu.toml`
 [protocols.lotto]
 enabled = true
 content_prefixes = ['{"p":"DogeLotto"']
@@ -96,6 +97,7 @@ burn_address = "DFmBjuJGGVRRomrdh1Eb77EnH1f9rtyHWp"
 # DoginalMarket Protocol (DMP) — inscription-based open marketplace.
 # Inscriptions with "protocol":"DMP","version":"1.0" are indexed.
 # Set enabled = false to skip all DMP market events.
+# For a one-off dedicated DMP sync: `kabosu doginals index sync --only dmp --config-path kabosu.toml`
 [protocols.dmp]
 enabled = true
 
@@ -128,4 +130,3 @@ memory_available = 16
 dogecoin_rpc_threads = 4
 dogecoin_rpc_timeout = 15
 indexer_channel_capacity = 10
-
