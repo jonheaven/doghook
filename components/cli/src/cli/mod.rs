@@ -263,7 +263,7 @@ fn apply_only_protocol_selection(
         "dogetag" => config.protocols.dogetag.enabled = true,
         "dogelotto" | "lotto" => config.protocols.lotto.enabled = true,
         "dogespells" => config.protocols.dogespells.enabled = true,
-        "dmp" | "doginalmarket" => config.protocols.dmp.enabled = true,
+        "dmp" => config.protocols.dmp.enabled = true,
         other => {
             return Err(format!(
                 "unsupported --only value '{}' (expected one of: dns, dogemap, dogetag, dogelotto, dogespells, dmp)",

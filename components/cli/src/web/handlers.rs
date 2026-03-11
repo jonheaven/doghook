@@ -1798,7 +1798,7 @@ async fn marketplace_fetch_tx_status(
 pub async fn marketplace_health(State(state): State<AppState>) -> impl IntoResponse {
     Json(json!({
         "status": "ok",
-        "service": "kabosu-doginalmarket",
+        "service": "kabosu-dmp",
         "network": format!("{:?}", state.dogecoin_config.network),
     }))
 }
@@ -4649,7 +4649,7 @@ pub async fn settle_marketplace_auction(
 }
 
 // ---------------------------------------------------------------------------
-// DoginalMarket Protocol (DMP) handlers
+// DMP handlers
 // ---------------------------------------------------------------------------
 
 /// Query params for GET /api/dmp/listings

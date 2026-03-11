@@ -30,7 +30,7 @@ Both projects are completely independent codebases. kabosu does not import dog.
 | DogeLotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `kabosu lotto deploy`, `kabosu lotto mint`, `kabosu lotto list`, `kabosu lotto status`, `kabosu lotto burn`, `kabosu lotto burners`, `kabosu doginals index sync --only dogelotto` |
 | Dogetag (on-chain graffiti) | Full — OP_RETURN text messages, reorg-safe | `kabosu dogetag list`, `kabosu dogetag search`, `kabosu dogetag address`, `kabosu dogetag send` |
 | DogeSpells | Full — OP_RETURN magic-prefix + CBOR spells, balances, NFT metadata snapshots, reorg-safe | `kabosu doginals index sync --only dogespells` plus `/dogespells/*` API routes |
-| DMP (DoginalMarket Protocol) | Full — inscription-based marketplace: listings, bids, settlements, cancels; reorg-safe | `kabosu doginals index sync --only dmp`, `GET /api/dmp/listings` |
+| DMP | Full — inscription-based marketplace: listings, bids, settlements, cancels; reorg-safe | `kabosu doginals index sync --only dmp`, `GET /api/dmp/listings` |
 
 ### DogeLotto
 
@@ -269,7 +269,7 @@ GET /dogespells/history/:ticker/:address
 GET /dogespells/spells/:txid
 ```
 
-### DoginalMarket Protocol (DMP)
+### DMP
 
 DMP is the open inscription-based marketplace standard for Doginals. Every listing, bid, settlement, and cancel is an on-chain inscription with `"protocol":"DMP","version":"1.0"`. PSBTs live entirely off-chain (IPFS or Arweave CID) — never on-chain.
 

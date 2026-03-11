@@ -1,4 +1,4 @@
-//! DoginalMarket Protocol (DMP) — inscription-based marketplace for Doginals.
+//! DMP — inscription-based marketplace for Doginals.
 //!
 //! Every listing, bid, settlement, and cancel is an on-chain inscription whose
 //! body is a JSON object with `"protocol": "DMP"` and `"version": "1.0"`.

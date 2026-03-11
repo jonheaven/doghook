@@ -1,6 +1,6 @@
-# DoginalMarket TODO
+# DMP TODO
 
-As of March 11, 2026, the `kabosu` DoginalMarket backend has working auth challenges/sessions, trader profiles/activity, listings, offers, auction creation, auction bids, auction bid cancellation, auction settlement, signed-intent verification, and RPC-backed transaction broadcast/status checks.
+As of March 11, 2026, the `kabosu` DMP backend has working auth challenges/sessions, trader profiles/activity, listings, offers, auction creation, auction bids, auction bid cancellation, auction settlement, signed-intent verification, and RPC-backed transaction broadcast/status checks.
 
 This file tracks what is still open, ordered from easier follow-ups to harder systems work.
 
@@ -42,10 +42,10 @@ Acceptance:
 
 - [ ] Add canonical signed-intent validation for offer cancellation (`offer_cancel`) instead of session-only cancellation.
 - [ ] Decide whether listing cancellation should remain session-only or also require a signed intent.
-- [ ] Normalize all signed DoginalMarket write routes around one envelope shape and one nonce policy.
+- [ ] Normalize all signed DMP write routes around one envelope shape and one nonce policy.
 
 Acceptance:
-- Every DoginalMarket action that moves economic state either uses session auth by design and is documented as such, or is protected by canonical Dogecoin signed intents.
+- Every DMP action that moves economic state either uses session auth by design and is documented as such, or is protected by canonical Dogecoin signed intents.
 
 ### 4. Upgrade Order Build From Template To Real Transaction Construction
 
@@ -84,7 +84,7 @@ Acceptance:
 - [ ] Keep `GET /v1/tx/:txid/status` and persisted marketplace state consistent.
 
 Acceptance:
-- DoginalMarket state advances automatically after broadcast instead of requiring clients to poll and infer finality themselves.
+- DMP state advances automatically after broadcast instead of requiring clients to poll and infer finality themselves.
 
 ### 8. Add Reorg-Aware Rollback / Invalidation
 
@@ -93,12 +93,12 @@ Acceptance:
 - [ ] Mark invalidated marketplace records explicitly.
 
 Acceptance:
-- Terminal DoginalMarket states are reversible when Dogecoin chain history is reorganized.
+- Terminal DMP states are reversible when Dogecoin chain history is reorganized.
 
 ### 9. Add Request Hardening And Operational Controls
 
 - [ ] Add rate limiting to auth, submit, offer, bid, and settlement routes.
-- [ ] Add trace IDs / structured request logging for DoginalMarket routes.
+- [ ] Add trace IDs / structured request logging for DMP routes.
 - [ ] Add explicit abuse controls for auth challenge creation and signature verification.
 
 Acceptance:
@@ -115,7 +115,7 @@ Acceptance:
 - [ ] Document retry / delivery semantics.
 
 Acceptance:
-- External services can react to DoginalMarket state transitions without scraping polling endpoints.
+- External services can react to DMP state transitions without scraping polling endpoints.
 
 ### 11. Add Integration And Migration Testing
 
@@ -123,13 +123,13 @@ Acceptance:
 - [ ] Add tests for signed-intent replay rejection.
 - [ ] Add tests for listing build -> submit -> confirm lifecycle.
 - [ ] Add tests for auction bid race / anti-sniping extension / settlement.
-- [ ] Run live migration smoke tests for `V29__doginalmarket.sql` and `V30__doginalmarket_auth_bids.sql`.
+- [ ] Run live migration smoke tests for `V29__dmp.sql` and `V30__dmp_auth_bids.sql`.
 
 Acceptance:
-- DoginalMarket flows are covered by repeatable tests instead of compile-only validation.
+- DMP flows are covered by repeatable tests instead of compile-only validation.
 
 ## Notes
 
 - `POST /v1/orders/:listing_id/submit` currently accepts raw transaction hex in the `signedPsbt` field for API compatibility. This is temporary.
-- `GET /v1/tx/:txid/status` now checks RPC confirmations, but no background state reconciler updates DoginalMarket records yet.
+- `GET /v1/tx/:txid/status` now checks RPC confirmations, but no background state reconciler updates DMP records yet.
 - `POST /v1/traders/:address/x/verify` is currently a stateful placeholder endpoint, not a real X OAuth integration.

@@ -298,7 +298,7 @@ pub fn dogespells_beam_in_event(spell: &DogeSpellsSpell) -> Value {
     dogespells_event("dogespells.beam_in", spell)
 }
 
-/// Build a DoginalMarket Protocol (DMP) webhook event payload.
+/// Build a DMP webhook event payload.
 ///
 /// The `event` field is `"dmp.<op>"` — e.g. `"dmp.listing"`, `"dmp.bid"`,
 /// `"dmp.settle"`, `"dmp.cancel"`.

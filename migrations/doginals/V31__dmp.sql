@@ -1,4 +1,4 @@
--- DoginalMarket Protocol (DMP) on-chain inscription index tables.
+-- DMP on-chain inscription index tables.
 -- Every listing, bid, and settlement is an inscription with "protocol":"DMP".
 -- PSBTs live off-chain (IPFS/Arweave CID only) — never stored on-chain.
 -- This schema indexes the on-chain inscription activity only.

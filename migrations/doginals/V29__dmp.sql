@@ -1,4 +1,4 @@
--- DoginalMarket Protocol (DMP) service tables and off-chain marketplace state.
+-- DMP service tables and off-chain marketplace state.
 
 CREATE TABLE IF NOT EXISTS marketplace_traders (
   address TEXT PRIMARY KEY,

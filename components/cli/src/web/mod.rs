@@ -89,7 +89,7 @@ pub async fn start_web_server(
         .route("/openapi.json", get(openapi_spec))
         // Health check
         .route("/health", get(health_check))
-        // DoginalMarket API scaffolding
+        // DMP API scaffolding
         .route(
             "/v1/auth/challenge",
             post(create_marketplace_auth_challenge),
@@ -320,7 +320,7 @@ async fn openapi_spec() -> impl IntoResponse {
             },
             "/api/dmp/listings": {
                 "get": {
-                    "summary": "List active DMP (DoginalMarket Protocol) listings",
+                    "summary": "List active DMP listings",
                     "operationId": "getDmpListings",
                     "tags": ["DMP"],
                     "parameters": [

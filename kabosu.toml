@@ -94,7 +94,7 @@ protocol_dev_address = "DHrqn6H6ocgbRB1Szu7Q1sn1tVTfkpinnc"
 burn_address = "DFmBjuJGGVRRomrdh1Eb77EnH1f9rtyHWp"
 # Optional, used for Burners later
 
-# DoginalMarket Protocol (DMP) — inscription-based open marketplace.
+# DMP — inscription-based open marketplace.
 # Inscriptions with "protocol":"DMP","version":"1.0" are indexed.
 # Set enabled = false to skip all DMP market events.
 # For a one-off dedicated DMP sync: `kabosu doginals index sync --only dmp --config-path kabosu.toml`

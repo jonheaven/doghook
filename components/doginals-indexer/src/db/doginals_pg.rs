@@ -3353,7 +3353,7 @@ async fn rebuild_dogespells_nft<T: GenericClient>(identity: &str, client: &T) ->
 }
 
 // ---------------------------------------------------------------------------
-// DoginalMarket Protocol (DMP)
+// DMP
 // ---------------------------------------------------------------------------
 
 use crate::core::{
