@@ -1339,7 +1339,7 @@ pub async fn count_dogemap_claims<T: GenericClient>(client: &T) -> Result<i64, S
 }
 
 // ---------------------------------------------------------------------------
-// doge-lotto
+// DogeLotto
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -1442,7 +1442,7 @@ pub async fn insert_lotto_lotteries<T: GenericClient>(
 
         client
             .execute(
-                "INSERT INTO lotto_lotteries (
+                "INSERT INTO dogelotto_lotteries (
                     lotto_id, inscription_id, deploy_tx_id, deploy_height, deploy_timestamp,
                           template, draw_block, cutoff_block, ticket_price_koinu, prize_pool_address, fee_percent,
                     main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
@@ -1526,7 +1526,7 @@ pub async fn insert_lotto_tickets<T: GenericClient>(
         let classic_numbers_i32 = seed_numbers_to_i32(&classic_numbers);
         let inserted_row = client
             .query_opt(
-                "INSERT INTO lotto_tickets (
+                "INSERT INTO dogelotto_tickets (
                           inscription_id, lotto_id, ticket_id, tx_id, minted_height, minted_timestamp,
                           seed_numbers, tip_percent, fingerprint, classic_numbers
                       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -1599,7 +1599,7 @@ pub async fn resolve_lotto<T: GenericClient>(
                 "SELECT lotto_id, template, draw_block, cutoff_block, ticket_price_koinu, prize_pool_address, fee_percent,
                     main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
                     resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
-             FROM lotto_lotteries
+             FROM dogelotto_lotteries
              WHERE resolved = FALSE AND draw_block + 1 = $1
              ORDER BY deploy_height ASC, lotto_id ASC",
             &[&(resolved_height as i64)],
@@ -1647,7 +1647,7 @@ pub async fn resolve_lotto<T: GenericClient>(
 
         client
             .execute(
-                "UPDATE lotto_lotteries
+                "UPDATE dogelotto_lotteries
                  SET resolved = TRUE,
                      resolved_height = $2,
                      resolved_timestamp = $3,
@@ -1688,7 +1688,7 @@ pub async fn resolve_lotto<T: GenericClient>(
             // transparently persisted in tip_percent and tip_deduction_koinu.
             client
                 .execute(
-                    "INSERT INTO lotto_winners (
+                    "INSERT INTO dogelotto_winners (
                         lotto_id, inscription_id, ticket_id, resolved_height,
                         rank, score, payout_bps, gross_payout_koinu, tip_percent, tip_deduction_koinu,
                         payout_koinu, seed_numbers, drawn_numbers, bonus_drawn_numbers,
@@ -1731,7 +1731,7 @@ pub async fn rollback_lotto_lotteries<T: GenericClient>(
 ) -> Result<(), String> {
     client
         .execute(
-            "DELETE FROM lotto_lotteries WHERE deploy_height = $1",
+            "DELETE FROM dogelotto_lotteries WHERE deploy_height = $1",
             &[&(deploy_height as i64)],
         )
         .await
@@ -1745,7 +1745,7 @@ pub async fn rollback_lotto_tickets<T: GenericClient>(
 ) -> Result<(), String> {
     client
         .execute(
-            "DELETE FROM lotto_tickets WHERE minted_height = $1",
+            "DELETE FROM dogelotto_tickets WHERE minted_height = $1",
             &[&(minted_height as i64)],
         )
         .await
@@ -1759,7 +1759,7 @@ pub async fn rollback_lotto_resolutions<T: GenericClient>(
 ) -> Result<(), String> {
     client
         .execute(
-            "DELETE FROM lotto_winners WHERE resolved_height = $1",
+            "DELETE FROM dogelotto_winners WHERE resolved_height = $1",
             &[&(resolved_height as i64)],
         )
         .await
@@ -1767,7 +1767,7 @@ pub async fn rollback_lotto_resolutions<T: GenericClient>(
 
     client
         .execute(
-            "UPDATE lotto_lotteries
+            "UPDATE dogelotto_lotteries
              SET resolved = FALSE,
                  resolved_height = NULL,
                  resolved_timestamp = NULL,
@@ -1797,7 +1797,7 @@ pub async fn rollback_lotto_burns<T: GenericClient>(
     // Get all burn events at this block to reverse burn points
     let burn_events = client
         .query(
-            "SELECT owner_address FROM lotto_burn_events WHERE burn_height = $1",
+            "SELECT owner_address FROM dogelotto_burn_events WHERE burn_height = $1",
             &[&(block_height as i64)],
         )
         .await
@@ -1808,7 +1808,7 @@ pub async fn rollback_lotto_burns<T: GenericClient>(
         let owner_address: String = row.get(0);
         client
             .execute(
-                "UPDATE lotto_burn_points
+                "UPDATE dogelotto_burn_points
                  SET burn_points = GREATEST(burn_points - 1, 0),
                      total_tickets_burned = GREATEST(total_tickets_burned - 1, 0)
                  WHERE owner_address = $1",
@@ -1821,7 +1821,7 @@ pub async fn rollback_lotto_burns<T: GenericClient>(
     // Delete burn events
     client
         .execute(
-            "DELETE FROM lotto_burn_events WHERE burn_height = $1",
+            "DELETE FROM dogelotto_burn_events WHERE burn_height = $1",
             &[&(block_height as i64)],
         )
         .await
@@ -1889,8 +1889,8 @@ pub async fn get_lotto_lottery<T: GenericClient>(
                     l.drawn_numbers, l.bonus_drawn_numbers,
                     l.verified_ticket_count, l.verified_sales_koinu, l.net_prize_koinu,
                     l.rollover_occurred,
-                    COALESCE((SELECT COUNT(*) FROM lotto_tickets t WHERE t.lotto_id = l.lotto_id), 0) AS current_ticket_count
-             FROM lotto_lotteries l
+                    COALESCE((SELECT COUNT(*) FROM dogelotto_tickets t WHERE t.lotto_id = l.lotto_id), 0) AS current_ticket_count
+             FROM dogelotto_lotteries l
              WHERE l.lotto_id = $1",
             &[&lotto_id],
         )
@@ -1922,8 +1922,8 @@ pub async fn list_lotto_lotteries<T: GenericClient>(
                     l.drawn_numbers, l.bonus_drawn_numbers,
                     l.verified_ticket_count, l.verified_sales_koinu, l.net_prize_koinu,
                     l.rollover_occurred,
-                    COALESCE((SELECT COUNT(*) FROM lotto_tickets t WHERE t.lotto_id = l.lotto_id), 0) AS current_ticket_count
-             FROM lotto_lotteries l
+                    COALESCE((SELECT COUNT(*) FROM dogelotto_tickets t WHERE t.lotto_id = l.lotto_id), 0) AS current_ticket_count
+             FROM dogelotto_lotteries l
              ORDER BY l.deploy_height DESC, l.lotto_id ASC
              LIMIT $1 OFFSET $2",
             &[&(limit as i64), &(offset as i64)],
@@ -1946,7 +1946,7 @@ pub async fn list_lotto_tickets<T: GenericClient>(
     let rows = client
         .query(
             "SELECT inscription_id, lotto_id, ticket_id, tx_id, minted_height, minted_timestamp, seed_numbers, tip_percent
-             FROM lotto_tickets
+             FROM dogelotto_tickets
              WHERE lotto_id = $1
              ORDER BY minted_height DESC, inscription_id DESC
              LIMIT $2 OFFSET $3",
@@ -1976,7 +1976,7 @@ pub async fn list_lotto_tickets<T: GenericClient>(
 
 pub async fn count_lotto_lotteries<T: GenericClient>(client: &T) -> Result<i64, String> {
     let row = client
-        .query_one("SELECT COUNT(*) FROM lotto_lotteries", &[])
+        .query_one("SELECT COUNT(*) FROM dogelotto_lotteries", &[])
         .await
         .map_err(|e| format!("count_lotto_lotteries: {e}"))?;
     Ok(row.get(0))
@@ -1992,7 +1992,7 @@ pub async fn list_lotto_winners<T: GenericClient>(
                     payout_bps, gross_payout_koinu, tip_percent, tip_deduction_koinu,
                     payout_koinu, seed_numbers, drawn_numbers, bonus_drawn_numbers,
                     fingerprint_distance, classic_matches, classic_payout_koinu
-             FROM lotto_winners
+             FROM dogelotto_winners
              WHERE lotto_id = $1
              ORDER BY rank ASC, inscription_id ASC",
             &[&lotto_id],
@@ -2034,7 +2034,7 @@ pub async fn get_stored_lotto<T: GenericClient>(
                 "SELECT lotto_id, template, draw_block, cutoff_block, ticket_price_koinu, prize_pool_address, fee_percent,
                     main_numbers_pick, main_numbers_max, bonus_numbers_pick, bonus_numbers_max,
                     resolution_mode, rollover_enabled, guaranteed_min_prize_koinu
-             FROM lotto_lotteries
+             FROM dogelotto_lotteries
              WHERE lotto_id = $1",
             &[&lotto_id],
         )
@@ -2053,7 +2053,7 @@ async fn get_lotto_tickets_for_resolution<T: GenericClient>(
         .query(
             "SELECT inscription_id, ticket_id, seed_numbers, minted_height, tip_percent,
                     fingerprint, classic_numbers
-             FROM lotto_tickets
+             FROM dogelotto_tickets
              WHERE lotto_id = $1 AND minted_height <= $2
              ORDER BY minted_height ASC, inscription_id ASC",
             &[&lotto_id, &(draw_block as i64)],
@@ -2846,7 +2846,7 @@ pub async fn record_lotto_burn<T: GenericClient>(
     // Insert burn event
     client
         .execute(
-            "INSERT INTO lotto_burn_events (inscription_id, lotto_id, ticket_id, owner_address, burn_height, burn_timestamp, burn_tx_id)
+            "INSERT INTO dogelotto_burn_events (inscription_id, lotto_id, ticket_id, owner_address, burn_height, burn_timestamp, burn_tx_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (inscription_id) DO NOTHING",
             &[
@@ -2865,13 +2865,13 @@ pub async fn record_lotto_burn<T: GenericClient>(
     // Increment burn points for owner
     client
         .execute(
-            "INSERT INTO lotto_burn_points (owner_address, burn_points, last_burn_height, last_burn_timestamp, total_tickets_burned)
+            "INSERT INTO dogelotto_burn_points (owner_address, burn_points, last_burn_height, last_burn_timestamp, total_tickets_burned)
              VALUES ($1, 1, $2, $3, 1)
              ON CONFLICT (owner_address) DO UPDATE SET
-                burn_points = lotto_burn_points.burn_points + 1,
+                burn_points = dogelotto_burn_points.burn_points + 1,
                 last_burn_height = EXCLUDED.last_burn_height,
                 last_burn_timestamp = EXCLUDED.last_burn_timestamp,
-                total_tickets_burned = lotto_burn_points.total_tickets_burned + 1",
+                total_tickets_burned = dogelotto_burn_points.total_tickets_burned + 1",
             &[
                 &owner_address,
                 &(burn_height as i64),
@@ -2892,7 +2892,7 @@ pub async fn get_burn_points<T: GenericClient>(
     let row = client
         .query_opt(
             "SELECT owner_address, burn_points, last_burn_height, last_burn_timestamp, total_tickets_burned
-             FROM lotto_burn_points
+             FROM dogelotto_burn_points
              WHERE owner_address = $1",
             &[&owner_address],
         )
@@ -2919,7 +2919,7 @@ pub async fn get_top_burners<T: GenericClient>(
     let rows = client
         .query(
             "SELECT owner_address, burn_points, last_burn_height, last_burn_timestamp, total_tickets_burned
-             FROM lotto_burn_points
+             FROM dogelotto_burn_points
              ORDER BY burn_points DESC
              LIMIT $1",
             &[&(limit as i64)],
@@ -2947,7 +2947,7 @@ pub async fn get_lotto_ticket_by_inscription<T: GenericClient>(
     let row = client
         .query_opt(
             "SELECT lotto_id, ticket_id
-             FROM lotto_tickets
+             FROM dogelotto_tickets
              WHERE inscription_id = $1",
             &[&inscription_id],
         )
@@ -3350,6 +3350,268 @@ async fn rebuild_dogespells_nft<T: GenericClient>(identity: &str, client: &T) ->
         .map_err(|e| format!("rebuild_dogespells_nft (insert): {e}"))?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// DoginalMarket Protocol (DMP)
+// ---------------------------------------------------------------------------
+
+use crate::core::{
+    meta_protocols::dmp::DmpOperation,
+    protocol::inscription_parsing::ParsedDmpOp,
+};
+
+/// Insert all DMP operations from a block into the appropriate tables.
+pub async fn insert_dmp_ops<T: GenericClient>(
+    ops: &[ParsedDmpOp],
+    client: &T,
+) -> Result<(), String> {
+    for parsed in ops {
+        match &parsed.op {
+            DmpOperation::Listing(l) => {
+                client
+                    .execute(
+                        "INSERT INTO dmp_listings
+                            (listing_id, inscription_id, seller, price_koinu, psbt_cid,
+                             expiry_height, nonce, signature, block_height, block_timestamp)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                         ON CONFLICT (listing_id) DO NOTHING",
+                        &[
+                            &l.inscription_id,
+                            &l.inscription_id,
+                            &l.seller,
+                            &(l.price_koinu as i64),
+                            &l.psbt_cid,
+                            &(l.expiry_height as i64),
+                            &(l.nonce as i64),
+                            &l.signature,
+                            &(parsed.block_height as i64),
+                            &(parsed.block_timestamp as i64),
+                        ],
+                    )
+                    .await
+                    .map_err(|e| format!("insert_dmp_ops (listing): {e}"))?;
+            }
+            DmpOperation::Bid(b) => {
+                client
+                    .execute(
+                        "INSERT INTO dmp_bids
+                            (bid_id, listing_id, bidder, price_koinu, psbt_cid,
+                             expiry_height, nonce, signature, block_height, block_timestamp)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                         ON CONFLICT (bid_id) DO NOTHING",
+                        &[
+                            &b.inscription_id,
+                            &b.listing_id,
+                            &b.bidder,
+                            &(b.price_koinu as i64),
+                            &b.psbt_cid,
+                            &(b.expiry_height as i64),
+                            &(b.nonce as i64),
+                            &b.signature,
+                            &(parsed.block_height as i64),
+                            &(parsed.block_timestamp as i64),
+                        ],
+                    )
+                    .await
+                    .map_err(|e| format!("insert_dmp_ops (bid): {e}"))?;
+            }
+            DmpOperation::Settle(s) => {
+                // Mark the original listing as settled
+                client
+                    .execute(
+                        "UPDATE dmp_listings SET settled = TRUE WHERE listing_id = $1",
+                        &[&s.listing_id],
+                    )
+                    .await
+                    .map_err(|e| format!("insert_dmp_ops (settle update listing): {e}"))?;
+
+                // Mark the accepted bid as settled (if provided)
+                if let Some(ref bid_id) = s.bid_id {
+                    client
+                        .execute(
+                            "UPDATE dmp_bids SET settled = TRUE WHERE bid_id = $1",
+                            &[bid_id],
+                        )
+                        .await
+                        .map_err(|e| format!("insert_dmp_ops (settle update bid): {e}"))?;
+                }
+
+                client
+                    .execute(
+                        "INSERT INTO dmp_settlements
+                            (settlement_id, listing_id, bid_id, settler, psbt_cid,
+                             nonce, signature, block_height, block_timestamp)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                         ON CONFLICT (settlement_id) DO NOTHING",
+                        &[
+                            &s.inscription_id,
+                            &s.listing_id,
+                            &s.bid_id,
+                            &s.settler,
+                            &s.psbt_cid,
+                            &(s.nonce as i64),
+                            &s.signature,
+                            &(parsed.block_height as i64),
+                            &(parsed.block_timestamp as i64),
+                        ],
+                    )
+                    .await
+                    .map_err(|e| format!("insert_dmp_ops (settlement): {e}"))?;
+            }
+            DmpOperation::Cancel(c) => {
+                // Mark the listing as cancelled
+                client
+                    .execute(
+                        "UPDATE dmp_listings SET cancelled = TRUE WHERE listing_id = $1",
+                        &[&c.listing_id],
+                    )
+                    .await
+                    .map_err(|e| format!("insert_dmp_ops (cancel update listing): {e}"))?;
+
+                client
+                    .execute(
+                        "INSERT INTO dmp_cancels
+                            (cancel_id, listing_id, canceller, nonce, signature,
+                             block_height, block_timestamp)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7)
+                         ON CONFLICT (cancel_id) DO NOTHING",
+                        &[
+                            &c.inscription_id,
+                            &c.listing_id,
+                            &c.canceller,
+                            &(c.nonce as i64),
+                            &c.signature,
+                            &(parsed.block_height as i64),
+                            &(parsed.block_timestamp as i64),
+                        ],
+                    )
+                    .await
+                    .map_err(|e| format!("insert_dmp_ops (cancel): {e}"))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Roll back all DMP activity indexed at `block_height`.
+pub async fn rollback_dmp_ops<T: GenericClient>(
+    block_height: u64,
+    client: &T,
+) -> Result<(), String> {
+    let h = block_height as i64;
+
+    // Restore listings/bids that were cancelled or settled in this block
+    let settle_ids: Vec<String> = client
+        .query(
+            "SELECT listing_id FROM dmp_settlements WHERE block_height = $1",
+            &[&h],
+        )
+        .await
+        .map_err(|e| format!("rollback_dmp_ops (fetch settlements): {e}"))?
+        .iter()
+        .map(|r| r.get(0))
+        .collect();
+    for lid in &settle_ids {
+        client
+            .execute(
+                "UPDATE dmp_listings SET settled = FALSE WHERE listing_id = $1",
+                &[lid],
+            )
+            .await
+            .map_err(|e| format!("rollback_dmp_ops (undo settle listing): {e}"))?;
+    }
+    client
+        .execute(
+            "UPDATE dmp_bids SET settled = FALSE
+             WHERE bid_id IN (SELECT bid_id FROM dmp_settlements WHERE block_height = $1 AND bid_id IS NOT NULL)",
+            &[&h],
+        )
+        .await
+        .map_err(|e| format!("rollback_dmp_ops (undo settle bids): {e}"))?;
+
+    let cancel_ids: Vec<String> = client
+        .query(
+            "SELECT listing_id FROM dmp_cancels WHERE block_height = $1",
+            &[&h],
+        )
+        .await
+        .map_err(|e| format!("rollback_dmp_ops (fetch cancels): {e}"))?
+        .iter()
+        .map(|r| r.get(0))
+        .collect();
+    for lid in &cancel_ids {
+        client
+            .execute(
+                "UPDATE dmp_listings SET cancelled = FALSE WHERE listing_id = $1",
+                &[lid],
+            )
+            .await
+            .map_err(|e| format!("rollback_dmp_ops (undo cancel listing): {e}"))?;
+    }
+
+    // Delete the DMP records themselves
+    client
+        .execute("DELETE FROM dmp_settlements WHERE block_height = $1", &[&h])
+        .await
+        .map_err(|e| format!("rollback_dmp_ops (delete settlements): {e}"))?;
+    client
+        .execute("DELETE FROM dmp_cancels WHERE block_height = $1", &[&h])
+        .await
+        .map_err(|e| format!("rollback_dmp_ops (delete cancels): {e}"))?;
+    client
+        .execute("DELETE FROM dmp_bids WHERE block_height = $1", &[&h])
+        .await
+        .map_err(|e| format!("rollback_dmp_ops (delete bids): {e}"))?;
+    client
+        .execute("DELETE FROM dmp_listings WHERE block_height = $1", &[&h])
+        .await
+        .map_err(|e| format!("rollback_dmp_ops (delete listings): {e}"))?;
+
+    Ok(())
+}
+
+/// List active (non-cancelled, non-settled) DMP listings.
+#[derive(Debug, Clone)]
+pub struct DmpListingRow {
+    pub listing_id: String,
+    pub seller: String,
+    pub price_koinu: u64,
+    pub psbt_cid: String,
+    pub expiry_height: u64,
+    pub block_height: u64,
+    pub block_timestamp: u64,
+}
+
+pub async fn list_dmp_listings<T: GenericClient>(
+    limit: usize,
+    offset: usize,
+    client: &T,
+) -> Result<Vec<DmpListingRow>, String> {
+    let rows = client
+        .query(
+            "SELECT listing_id, seller, price_koinu, psbt_cid, expiry_height,
+                    block_height, block_timestamp
+             FROM dmp_listings
+             WHERE NOT cancelled AND NOT settled
+             ORDER BY block_height DESC, listing_id ASC
+             LIMIT $1 OFFSET $2",
+            &[&(limit as i64), &(offset as i64)],
+        )
+        .await
+        .map_err(|e| format!("list_dmp_listings: {e}"))?;
+    Ok(rows
+        .iter()
+        .map(|r| DmpListingRow {
+            listing_id: r.get(0),
+            seller: r.get(1),
+            price_koinu: r.get::<_, i64>(2) as u64,
+            psbt_cid: r.get(3),
+            expiry_height: r.get::<_, i64>(4) as u64,
+            block_height: r.get::<_, i64>(5) as u64,
+            block_timestamp: r.get::<_, i64>(6) as u64,
+        })
+        .collect())
 }
 
 #[cfg(test)]

@@ -6,13 +6,13 @@ use std::{
 use bitcoin::Network;
 
 use crate::{
-    DogeSpellsProtocolConfig, Config, DnsProtocolConfig, DogecoinConfig, DogecoinDataSource,
-    DogemapProtocolConfig, DogetagProtocolConfig, DoginalConfig, DoginalDrc20Config,
-    DoginalMetaProtocolsConfig, DoginalsPredicatesConfig, DunesConfig, LottoProtocolConfig,
-    MetricsConfig, PgDatabaseConfig, ProtocolsConfig, ResourcesConfig, StorageConfig, WebConfig,
-    WebhooksConfig, DEFAULT_DOGECOIN_RPC_THREADS, DEFAULT_DOGECOIN_RPC_TIMEOUT,
-    DEFAULT_INDEXER_CHANNEL_CAPACITY, DEFAULT_LRU_CACHE_SIZE, DEFAULT_MEMORY_AVAILABLE,
-    DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
+    DmpProtocolConfig, DogeSpellsProtocolConfig, Config, DnsProtocolConfig, DogecoinConfig,
+    DogecoinDataSource, DogemapProtocolConfig, DogetagProtocolConfig, DoginalConfig,
+    DoginalDrc20Config, DoginalMetaProtocolsConfig, DoginalsPredicatesConfig, DunesConfig,
+    LottoProtocolConfig, MetricsConfig, PgDatabaseConfig, ProtocolsConfig, ResourcesConfig,
+    StorageConfig, WebConfig, WebhooksConfig, DEFAULT_DOGECOIN_RPC_THREADS,
+    DEFAULT_DOGECOIN_RPC_TIMEOUT, DEFAULT_INDEXER_CHANNEL_CAPACITY, DEFAULT_LRU_CACHE_SIZE,
+    DEFAULT_MEMORY_AVAILABLE, DEFAULT_ULIMIT, DEFAULT_WORKING_DIR,
 };
 
 #[derive(Deserialize, Clone, Debug)]
@@ -125,6 +125,7 @@ pub struct ProtocolsConfigToml {
     pub lotto: Option<LottoProtocolConfigToml>,
     pub dogetag: Option<DogetagProtocolConfigToml>,
     pub dogespells: Option<DogeSpellsProtocolConfigToml>,
+    pub dmp: Option<DmpProtocolConfigToml>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -134,6 +135,11 @@ pub struct DogetagProtocolConfigToml {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DogeSpellsProtocolConfigToml {
+    pub enabled: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct DmpProtocolConfigToml {
     pub enabled: Option<bool>,
 }
 
@@ -273,7 +279,7 @@ impl ConfigToml {
                         .lotto
                         .as_ref()
                         .and_then(|l| l.content_prefixes.clone())
-                        .unwrap_or_else(|| vec![r#"{"p":"doge-lotto""#.to_string()]),
+                        .unwrap_or_else(|| vec![r#"{"p":"DogeLotto""#.to_string()]),
                     burn_address: p
                         .lotto
                         .as_ref()
@@ -284,6 +290,9 @@ impl ConfigToml {
                         .as_ref()
                         .and_then(|l| l.protocol_dev_address.clone())
                         .unwrap_or_default(),
+                },
+                dmp: DmpProtocolConfig {
+                    enabled: p.dmp.as_ref().and_then(|d| d.enabled).unwrap_or(true),
                 },
             }
         };

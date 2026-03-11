@@ -1,4 +1,8 @@
-CREATE TABLE IF NOT EXISTS lotto_lotteries (
+-- DogeLotto — the canonical trustless on-chain lotto on Dogecoin.
+-- Inscriptions carry JSON with "p":"DogeLotto"; the protocol parser
+-- validates deploys and mints before writing to these tables.
+
+CREATE TABLE IF NOT EXISTS dogelotto_lotteries (
     lotto_id                         TEXT        NOT NULL,
     inscription_id                   TEXT        NOT NULL,
     deploy_tx_id                     TEXT        NOT NULL,
@@ -24,7 +28,7 @@ CREATE TABLE IF NOT EXISTS lotto_lotteries (
     PRIMARY KEY (lotto_id)
 );
 
-CREATE TABLE IF NOT EXISTS lotto_tickets (
+CREATE TABLE IF NOT EXISTS dogelotto_tickets (
     inscription_id                   TEXT        NOT NULL,
     lotto_id                         TEXT        NOT NULL,
     ticket_id                        TEXT        NOT NULL,
@@ -33,12 +37,12 @@ CREATE TABLE IF NOT EXISTS lotto_tickets (
     minted_timestamp                 BIGINT      NOT NULL,
     seed_numbers                     INTEGER[]   NOT NULL,
     PRIMARY KEY (inscription_id),
-    CONSTRAINT lotto_tickets_lotto_ticket_id_key UNIQUE (lotto_id, ticket_id),
-    CONSTRAINT lotto_tickets_lotto_id_fkey FOREIGN KEY (lotto_id)
-        REFERENCES lotto_lotteries (lotto_id) ON DELETE CASCADE
+    CONSTRAINT dogelotto_tickets_lotto_ticket_id_key UNIQUE (lotto_id, ticket_id),
+    CONSTRAINT dogelotto_tickets_lotto_id_fkey FOREIGN KEY (lotto_id)
+        REFERENCES dogelotto_lotteries (lotto_id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS lotto_winners (
+CREATE TABLE IF NOT EXISTS dogelotto_winners (
     lotto_id                         TEXT        NOT NULL,
     inscription_id                   TEXT        NOT NULL,
     ticket_id                        TEXT        NOT NULL,
@@ -50,15 +54,15 @@ CREATE TABLE IF NOT EXISTS lotto_winners (
     seed_numbers                     INTEGER[]   NOT NULL,
     drawn_numbers                    INTEGER[]   NOT NULL,
     PRIMARY KEY (lotto_id, inscription_id),
-    CONSTRAINT lotto_winners_lotto_id_fkey FOREIGN KEY (lotto_id)
-        REFERENCES lotto_lotteries (lotto_id) ON DELETE CASCADE
+    CONSTRAINT dogelotto_winners_lotto_id_fkey FOREIGN KEY (lotto_id)
+        REFERENCES dogelotto_lotteries (lotto_id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS lotto_lotteries_draw_block_idx
-    ON lotto_lotteries (draw_block);
-CREATE INDEX IF NOT EXISTS lotto_lotteries_resolved_height_idx
-    ON lotto_lotteries (resolved_height);
-CREATE INDEX IF NOT EXISTS lotto_tickets_lotto_height_idx
-    ON lotto_tickets (lotto_id, minted_height);
-CREATE INDEX IF NOT EXISTS lotto_winners_resolved_height_idx
-    ON lotto_winners (resolved_height);
+CREATE INDEX IF NOT EXISTS dogelotto_lotteries_draw_block_idx
+    ON dogelotto_lotteries (draw_block);
+CREATE INDEX IF NOT EXISTS dogelotto_lotteries_resolved_height_idx
+    ON dogelotto_lotteries (resolved_height);
+CREATE INDEX IF NOT EXISTS dogelotto_tickets_lotto_height_idx
+    ON dogelotto_tickets (lotto_id, minted_height);
+CREATE INDEX IF NOT EXISTS dogelotto_winners_resolved_height_idx
+    ON dogelotto_winners (resolved_height);

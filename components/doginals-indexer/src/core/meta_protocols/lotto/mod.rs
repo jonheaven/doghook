@@ -1,6 +1,6 @@
-//! doge-lotto meta-protocol parser.
+//! DogeLotto meta-protocol parser.
 //!
-//! Inscriptions with `"p": "doge-lotto"` carry lottery operations.
+//! Inscriptions with `"p": "DogeLotto"` carry lottery operations.
 //! All inscriptions are `text/plain` JSON.
 //!
 //! Deploys define a template, the draw block, number drums, and payout rules.
@@ -11,7 +11,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-pub const LOTTO_PROTOCOL: &str = "doge-lotto";
+pub const LOTTO_PROTOCOL: &str = "DogeLotto";
 pub const DEFAULT_MAIN_PICK: u16 = 69;
 pub const GLOBAL_NUMBER_MIN: u16 = 1;
 pub const GLOBAL_NUMBER_MAX: u16 = 420;
@@ -63,7 +63,7 @@ pub enum LottoTemplate {
     LifeAnnuity,
     #[serde(rename = "custom")]
     Custom,
-    /// SHA256-fingerprint distance ranking (doge-69-420, doge-4-20-flash, doge-max).
+    /// SHA256-fingerprint distance ranking (DogeLotto variants: doge-69-420, doge-4-20-flash, doge-max).
     #[serde(rename = "closest_fingerprint")]
     ClosestFingerprint,
 }

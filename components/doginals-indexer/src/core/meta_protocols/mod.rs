@@ -1,3 +1,4 @@
+pub mod dmp;
 pub mod dogespells;
 pub mod dns;
 pub mod dogemap;

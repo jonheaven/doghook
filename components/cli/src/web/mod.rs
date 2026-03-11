@@ -61,6 +61,7 @@ pub async fn start_web_server(
         .route("/api/dns/names", get(get_dns_names))
         .route("/api/dogemap/claims", get(get_dogemap_claims))
         .route("/api/dogetags", get(get_dogetags))
+        .route("/api/dmp/listings", get(get_dmp_listings))
         .route(
             "/dogespells/balance/:ticker/:address",
             get(get_dogespells_balance),
@@ -315,6 +316,18 @@ async fn openapi_spec() -> impl IntoResponse {
                         { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
                     ],
                     "responses": { "200": { "description": "Dogetag list" } }
+                }
+            },
+            "/api/dmp/listings": {
+                "get": {
+                    "summary": "List active DMP (DoginalMarket Protocol) listings",
+                    "operationId": "getDmpListings",
+                    "tags": ["DMP"],
+                    "parameters": [
+                        { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+                        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 200 } }
+                    ],
+                    "responses": { "200": { "description": "Active DMP listing array" } }
                 }
             },
             "/dogespells/balance/{ticker}/{address}": {

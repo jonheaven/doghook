@@ -6,7 +6,9 @@ use serde_json::Value;
 use sha2::Sha256;
 use std::sync::OnceLock;
 
+use crate::core::meta_protocols::dmp::DmpOperation;
 use crate::core::meta_protocols::dogespells::{identity_hex, DogeSpellsSpell};
+use crate::core::protocol::inscription_parsing::ParsedDmpOp;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -188,7 +190,7 @@ pub fn dogetag_event(
     })
 }
 
-/// Build a doge-lotto ticket event payload.
+/// Build a DogeLotto ticket event payload.
 pub fn lotto_ticket_event(
     lotto_id: &str,
     ticket_id: &str,
@@ -200,7 +202,7 @@ pub fn lotto_ticket_event(
     tip_percent: u8,
 ) -> Value {
     serde_json::json!({
-        "event": "lotto.ticket_minted",
+        "event": "dogelotto.ticket_minted",
         "lotto_id": lotto_id,
         "ticket_id": ticket_id,
         "inscription_id": inscription_id,
@@ -212,7 +214,7 @@ pub fn lotto_ticket_event(
     })
 }
 
-/// Build a doge-lotto winner resolution event payload.
+/// Build a DogeLotto winner resolution event payload.
 pub fn lotto_winner_event(
     lotto_id: &str,
     ticket_id: &str,
@@ -229,7 +231,7 @@ pub fn lotto_winner_event(
     drawn_numbers: &[u16],
 ) -> Value {
     serde_json::json!({
-        "event": "lotto.winner_resolved",
+        "event": "dogelotto.winner_resolved",
         "lotto_id": lotto_id,
         "ticket_id": ticket_id,
         "inscription_id": inscription_id,
@@ -296,3 +298,56 @@ pub fn dogespells_beam_in_event(spell: &DogeSpellsSpell) -> Value {
     dogespells_event("dogespells.beam_in", spell)
 }
 
+/// Build a DoginalMarket Protocol (DMP) webhook event payload.
+///
+/// The `event` field is `"dmp.<op>"` — e.g. `"dmp.listing"`, `"dmp.bid"`,
+/// `"dmp.settle"`, `"dmp.cancel"`.
+pub fn dmp_event(parsed: &ParsedDmpOp) -> Value {
+    let base = serde_json::json!({
+        "inscription_id": parsed.inscription_id,
+        "tx_id": parsed.tx_id,
+        "block_height": parsed.block_height,
+        "block_timestamp": parsed.block_timestamp,
+    });
+    let mut obj = base.as_object().cloned().unwrap_or_default();
+
+    match &parsed.op {
+        DmpOperation::Listing(l) => {
+            obj.insert("event".into(), "dmp.listing".into());
+            obj.insert("seller".into(), l.seller.clone().into());
+            obj.insert("price_koinu".into(), l.price_koinu.into());
+            obj.insert("psbt_cid".into(), l.psbt_cid.clone().into());
+            obj.insert("expiry_height".into(), l.expiry_height.into());
+            obj.insert("nonce".into(), l.nonce.into());
+            obj.insert("signature".into(), l.signature.clone().into());
+        }
+        DmpOperation::Bid(b) => {
+            obj.insert("event".into(), "dmp.bid".into());
+            obj.insert("listing_id".into(), b.listing_id.clone().into());
+            obj.insert("bidder".into(), b.bidder.clone().into());
+            obj.insert("price_koinu".into(), b.price_koinu.into());
+            obj.insert("psbt_cid".into(), b.psbt_cid.clone().into());
+            obj.insert("expiry_height".into(), b.expiry_height.into());
+            obj.insert("nonce".into(), b.nonce.into());
+            obj.insert("signature".into(), b.signature.clone().into());
+        }
+        DmpOperation::Settle(s) => {
+            obj.insert("event".into(), "dmp.settle".into());
+            obj.insert("listing_id".into(), s.listing_id.clone().into());
+            obj.insert("bid_id".into(), s.bid_id.clone().into());
+            obj.insert("settler".into(), s.settler.clone().into());
+            obj.insert("psbt_cid".into(), s.psbt_cid.clone().into());
+            obj.insert("nonce".into(), s.nonce.into());
+            obj.insert("signature".into(), s.signature.clone().into());
+        }
+        DmpOperation::Cancel(c) => {
+            obj.insert("event".into(), "dmp.cancel".into());
+            obj.insert("listing_id".into(), c.listing_id.clone().into());
+            obj.insert("canceller".into(), c.canceller.clone().into());
+            obj.insert("nonce".into(), c.nonce.into());
+            obj.insert("signature".into(), c.signature.clone().into());
+        }
+    }
+
+    Value::Object(obj)
+}

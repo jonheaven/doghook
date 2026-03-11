@@ -211,9 +211,20 @@ async fn new_ordinals_indexer_runloop(
 
 // Re-export row types so callers (CLI) don't need to reach into db internals.
 pub use db::doginals_pg::{
-    DnsNameRow, DogemapClaimRow, LottoStatusRow, LottoSummaryRow, LottoTicketCardRow, LottoWinnerRow,
-    BurnPointsRow, LottoTicketInfoRow,
+    DmpListingRow, DnsNameRow, DogemapClaimRow, LottoStatusRow, LottoSummaryRow,
+    LottoTicketCardRow, LottoWinnerRow, BurnPointsRow, LottoTicketInfoRow,
 };
+
+/// List active DMP listings.
+pub async fn dmp_list_listings(
+    limit: usize,
+    offset: usize,
+    config: &Config,
+) -> Result<Vec<DmpListingRow>, String> {
+    let pool = pg_pool(&config.doginals.as_ref().unwrap().db)?;
+    let client = pg_pool_client(&pool).await?;
+    db::doginals_pg::list_dmp_listings(limit, offset, &client).await
+}
 
 /// Look up a single DNS name registration.
 pub async fn dns_resolve(name: &str, config: &Config) -> Result<Option<DnsNameRow>, String> {
@@ -259,7 +270,7 @@ pub async fn dogemap_list(
     Ok((rows, total))
 }
 
-/// Look up a single doge-lotto deployment and any resolved winners.
+/// Look up a single DogeLotto deployment and any resolved winners.
 pub async fn lotto_status(
     lotto_id: &str,
     config: &Config,
@@ -269,7 +280,7 @@ pub async fn lotto_status(
     db::doginals_pg::get_lotto_lottery(lotto_id, &client).await
 }
 
-/// List doge-lotto deployments.
+/// List DogeLotto deployments.
 pub async fn lotto_list(
     limit: usize,
     offset: usize,
@@ -501,6 +512,7 @@ pub async fn scan_doginals<W: Write + Send + 'static>(
                                     let mut dogemap_map = HashMap::new();
                                     let mut lotto_deploy_map = HashMap::new();
                                     let mut lotto_mints = vec![];
+                                    let mut dmp_ops = vec![];
                                     parse_inscriptions_in_standardized_block(
                                         block,
                                         &mut drc20_map,
@@ -508,6 +520,7 @@ pub async fn scan_doginals<W: Write + Send + 'static>(
                                         &mut dogemap_map,
                                         &mut lotto_deploy_map,
                                         &mut lotto_mints,
+                                        &mut dmp_ops,
                                         &config_moved,
                                         &ctx_moved,
                                     );

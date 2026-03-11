@@ -657,7 +657,7 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                 };
 
                 let payload = serde_json::json!({
-                    "p": "doge-lotto",
+                    "p": "DogeLotto",
                     "op": "deploy",
                     "lotto_id": cmd.lotto_id,
                     "template": template,
@@ -735,7 +735,7 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                 let ticket_id = cmd.ticket_id.clone().unwrap_or_else(generate_ticket_id);
 
                 let payload = serde_json::json!({
-                    "p": "doge-lotto",
+                    "p": "DogeLotto",
                     "op": "mint",
                     "lotto_id": cmd.lotto_id,
                     "ticket_id": ticket_id,
@@ -1024,7 +1024,7 @@ async fn handle_command(opts: Protocol, ctx: &Context) -> Result<(), String> {
                         serde_json::json!({ "total": total, "lottos": json_rows })
                     );
                 } else {
-                    println!("doge-lotto Deployments (Total: {total})");
+                    println!("DogeLotto Deployments (Total: {total})");
                     println!(
                         "{:<24} {:<12} {:<10} {:<8} {:<8} {}",
                         "Lotto ID", "Draw Block", "Tickets", "Fee %", "Resolved", "Mode"

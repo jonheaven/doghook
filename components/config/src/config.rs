@@ -109,6 +109,7 @@ pub struct ProtocolsConfig {
     pub lotto: LottoProtocolConfig,
     pub dogetag: DogetagProtocolConfig,
     pub dogespells: DogeSpellsProtocolConfig,
+    pub dmp: DmpProtocolConfig,
 }
 
 impl Default for ProtocolsConfig {
@@ -118,12 +119,13 @@ impl Default for ProtocolsConfig {
             dogemap: DogemapProtocolConfig { enabled: true },
             lotto: LottoProtocolConfig {
                 enabled: true,
-                content_prefixes: vec![r#"{"p":"doge-lotto""#.to_string()],
+                content_prefixes: vec![r#"{"p":"DogeLotto""#.to_string()],
                 burn_address: "DBurnXXXXXXXXXXXXXXXXXXXXXXX9eVvaA".to_string(),
                 protocol_dev_address: String::new(),
             },
             dogetag: DogetagProtocolConfig { enabled: true },
             dogespells: DogeSpellsProtocolConfig { enabled: true },
+            dmp: DmpProtocolConfig { enabled: true },
         }
     }
 }
@@ -153,6 +155,11 @@ pub struct DogetagProtocolConfig {
 
 #[derive(Clone, Debug)]
 pub struct DogeSpellsProtocolConfig {
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct DmpProtocolConfig {
     pub enabled: bool,
 }
 
@@ -377,6 +384,10 @@ impl Config {
 
     pub fn dogespells_enabled(&self) -> bool {
         self.protocols.dogespells.enabled
+    }
+
+    pub fn dmp_enabled(&self) -> bool {
+        self.protocols.dmp.enabled
     }
 
     pub fn doginals_predicates(&self) -> Option<&DoginalsPredicatesConfig> {

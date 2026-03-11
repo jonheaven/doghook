@@ -321,7 +321,7 @@ pub async fn get_lotto_tickets(
             "SELECT ticket_id, lotto_id AS lotto_name,
                     inscription_id AS player_address,
                     minted_height AS block_height, tip_percent
-             FROM lotto_tickets
+             FROM dogelotto_tickets
              ORDER BY minted_height DESC
              LIMIT $1 OFFSET $2",
             &[&params.limit, &params.offset],
@@ -359,7 +359,7 @@ pub async fn get_lotto_winners(
                     inscription_id AS player_address,
                     gross_payout_koinu, tip_deduction_koinu,
                     resolved_height AS draw_block
-             FROM lotto_winners
+             FROM dogelotto_winners
              ORDER BY resolved_height DESC
              LIMIT $1 OFFSET $2",
             &[&params.limit, &params.offset],
@@ -456,7 +456,7 @@ pub async fn lotto_verify(
             .query_opt(
                 "SELECT w.rank, w.payout_koinu, w.classic_matches, w.classic_payout_koinu,
                         w.fingerprint_distance, w.inscription_id
-                 FROM lotto_winners w
+                 FROM dogelotto_winners w
                  WHERE w.lotto_id = $1 AND w.fingerprint_distance = $2",
                 &[lotto_id, &distance_hex],
             )
@@ -4646,4 +4646,73 @@ pub async fn settle_marketplace_auction(
         "status": "settled",
     }))
     .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// DoginalMarket Protocol (DMP) handlers
+// ---------------------------------------------------------------------------
+
+/// Query params for GET /api/dmp/listings
+#[derive(Deserialize)]
+pub struct DmpListingsParams {
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub offset: i64,
+}
+
+fn default_limit() -> i64 {
+    50
+}
+
+/// Response shape for a single DMP listing.
+#[derive(Serialize)]
+pub struct DmpListingResponse {
+    pub listing_id: String,
+    pub seller: String,
+    pub price_koinu: i64,
+    pub psbt_cid: String,
+    pub expiry_height: i64,
+    pub block_height: i64,
+    pub block_timestamp: i64,
+}
+
+/// `GET /api/dmp/listings` — active (non-cancelled, non-settled) DMP listings.
+pub async fn get_dmp_listings(
+    State(state): State<AppState>,
+    Query(params): Query<DmpListingsParams>,
+) -> Result<Json<Vec<DmpListingResponse>>, StatusCode> {
+    let client = state
+        .doginals_pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let rows = client
+        .query(
+            "SELECT listing_id, seller, price_koinu, psbt_cid, expiry_height,
+                    block_height, block_timestamp
+             FROM dmp_listings
+             WHERE NOT cancelled AND NOT settled
+             ORDER BY block_height DESC, listing_id ASC
+             LIMIT $1 OFFSET $2",
+            &[&params.limit, &params.offset],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let listings: Vec<DmpListingResponse> = rows
+        .iter()
+        .map(|r| DmpListingResponse {
+            listing_id: r.get(0),
+            seller: r.get(1),
+            price_koinu: r.get(2),
+            psbt_cid: r.get(3),
+            expiry_height: r.get(4),
+            block_height: r.get(5),
+            block_timestamp: r.get(6),
+        })
+        .collect();
+
+    Ok(Json(listings))
 }

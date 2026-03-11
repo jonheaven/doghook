@@ -18,6 +18,7 @@ use doginals::{
 };
 use serde_json::json;
 
+use crate::core::meta_protocols::dmp::{try_parse_dmp, DmpOperation};
 use crate::core::meta_protocols::dns::try_parse_dns_name;
 use crate::core::meta_protocols::dogemap::try_parse_dogemap_claim;
 use crate::core::meta_protocols::drc20::{
@@ -27,6 +28,16 @@ use crate::core::meta_protocols::drc20::{
 use crate::core::meta_protocols::lotto::{
     try_parse_lotto_deploy, try_parse_lotto_mint, LottoDeploy, LottoMint,
 };
+
+/// A DMP operation parsed from an inscription body, bundled with context.
+#[derive(Debug, Clone)]
+pub struct ParsedDmpOp {
+    pub inscription_id: String,
+    pub tx_id: String,
+    pub op: DmpOperation,
+    pub block_height: u64,
+    pub block_timestamp: u32,
+}
 
 #[derive(Debug, Clone)]
 pub struct ParsedLottoDeploy {
@@ -148,6 +159,7 @@ pub fn parse_inscriptions_from_standardized_tx(
     dogemap_map: &mut HashMap<u32, String>,
     lotto_deploy_map: &mut HashMap<String, ParsedLottoDeploy>,
     lotto_mints: &mut Vec<ParsedLottoMint>,
+    dmp_ops: &mut Vec<ParsedDmpOp>,
     config: &Config,
     ctx: &Context,
 ) -> Vec<OrdinalOperation> {
@@ -314,7 +326,7 @@ pub fn parse_inscriptions_from_standardized_tx(
             }
         }
 
-        // doge-lotto detection mirrors DNS/Dogemap: parse before global predicates so
+        // DogeLotto detection mirrors DNS/Dogemap: parse before global predicates so
         // protocol activity is never dropped by selective indexing rules.
         if config.lotto_enabled()
             && crate::core::protocol::predicate::inscription_matches_content_prefixes(
@@ -350,6 +362,26 @@ pub fn parse_inscriptions_from_standardized_tx(
             }
         }
 
+        // DMP detection — parse before predicate filter so market activity is never dropped.
+        if config.dmp_enabled() {
+            if let Some(body) = inscription.body.as_ref() {
+                if let Some(op) =
+                    try_parse_dmp(body, &reveal_data.inscription_id)
+                {
+                    dmp_ops.push(ParsedDmpOp {
+                        inscription_id: reveal_data.inscription_id.clone(),
+                        tx_id: tx
+                            .transaction_identifier
+                            .get_hash_bytes_str()
+                            .to_string(),
+                        op,
+                        block_height: block_identifier.index,
+                        block_timestamp: 0, // filled in by the block-level caller
+                    });
+                }
+            }
+        }
+
         // Hiro-style predicate filtering: skip inscriptions that don't match the configured rules.
         if let Some(predicates) = config.doginals_predicates() {
             if !crate::core::protocol::predicate::inscription_matches_predicates(&inscription, predicates) {
@@ -378,10 +410,13 @@ pub fn parse_inscriptions_in_standardized_block(
     dogemap_map: &mut HashMap<u32, String>,
     lotto_deploy_map: &mut HashMap<String, ParsedLottoDeploy>,
     lotto_mints: &mut Vec<ParsedLottoMint>,
+    dmp_ops: &mut Vec<ParsedDmpOp>,
     config: &Config,
     ctx: &Context,
 ) {
+    let block_timestamp = block.timestamp;
     for tx in block.transactions.iter_mut() {
+        let start_idx = dmp_ops.len();
         tx.metadata.ordinal_operations = parse_inscriptions_from_standardized_tx(
             tx,
             &block.block_identifier,
@@ -391,9 +426,14 @@ pub fn parse_inscriptions_in_standardized_block(
             dogemap_map,
             lotto_deploy_map,
             lotto_mints,
+            dmp_ops,
             config,
             ctx,
         );
+        // Back-fill block_timestamp for DMP ops emitted by this tx
+        for op in dmp_ops[start_idx..].iter_mut() {
+            op.block_timestamp = block_timestamp;
+        }
     }
 }
 
@@ -432,6 +472,7 @@ mod test {
             &mut HashMap::new(),
             &mut HashMap::new(),
             &mut HashMap::new(),
+            &mut Vec::new(),
             &mut Vec::new(),
             &config,
             &ctx,

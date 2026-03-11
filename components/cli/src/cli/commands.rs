@@ -16,7 +16,7 @@ pub enum Protocol {
     /// Dogemap (block claim) query commands
     #[clap(subcommand)]
     Dogemap(DogemapCommand),
-    /// doge-lotto deploy, mint, and query commands
+    /// DogeLotto deploy, mint, and query commands
     #[clap(subcommand)]
     Lotto(LottoCommand),
     /// Dogetag on-chain graffiti query commands
@@ -189,15 +189,15 @@ pub struct DogemapListCommand {
 }
 
 // ---------------------------------------------------------------------------
-// doge-lotto subcommands
+// DogeLotto subcommands
 // ---------------------------------------------------------------------------
 
 #[derive(Subcommand, PartialEq, Clone, Debug)]
 pub enum LottoCommand {
-    /// Build a compact doge-lotto deploy inscription JSON payload
+    /// Build a compact DogeLotto deploy inscription JSON payload
     #[clap(name = "deploy")]
     Deploy(LottoDeployCommand),
-    /// Build, sign, and broadcast an atomic doge-lotto mint transaction
+    /// Build, sign, and broadcast an atomic DogeLotto mint transaction
     #[clap(name = "mint")]
     Mint(LottoMintCommand),
     /// Show deployment and winner status for a lotto_id

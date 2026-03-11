@@ -28,7 +28,8 @@ use crate::{
         },
         protocol::{
             inscription_parsing::{
-                parse_inscriptions_in_standardized_block, ParsedLottoDeploy, ParsedLottoMint,
+                parse_inscriptions_in_standardized_block, ParsedDmpOp, ParsedLottoDeploy,
+                ParsedLottoMint,
             },
             inscription_sequencing::{
                 get_dogecoin_network, get_jubilee_block_height,
@@ -135,6 +136,7 @@ pub async fn index_block(
         let mut dogemap_map: HashMap<u32, String> = HashMap::new();
         let mut lotto_deploy_map: HashMap<String, ParsedLottoDeploy> = HashMap::new();
         let mut lotto_mints: Vec<ParsedLottoMint> = Vec::new();
+        let mut dmp_ops: Vec<ParsedDmpOp> = Vec::new();
         // Dogetags: (txid, sender_address, message, raw_script)
         let mut dogetag_list: Vec<(String, Option<String>, String, String)> = Vec::new();
         let mut dogespells_list: Vec<IndexedDogeSpellsSpell> = Vec::new();
@@ -148,6 +150,7 @@ pub async fn index_block(
             &mut dogemap_map,
             &mut lotto_deploy_map,
             &mut lotto_mints,
+            &mut dmp_ops,
             config,
             ctx,
         );
@@ -495,6 +498,31 @@ pub async fn index_block(
             }
         }
 
+        // DMP — index all market operations detected in this block
+        if !dmp_ops.is_empty() {
+            if let Err(e) =
+                doginals_pg::insert_dmp_ops(&dmp_ops, &ord_tx).await
+            {
+                return Err(format!("Failed to insert DMP operations: {}", e));
+            }
+            try_info!(
+                ctx,
+                "Indexed {} DMP operation(s) at block #{block_height}",
+                dmp_ops.len()
+            );
+            let webhook_urls = config.webhook_urls().to_vec();
+            if !webhook_urls.is_empty() {
+                for parsed in &dmp_ops {
+                    let payload = webhooks::dmp_event(parsed);
+                    webhooks::fire_webhooks(
+                        webhook_urls.clone(),
+                        config.webhooks.hmac_secret.clone(),
+                        payload,
+                    );
+                }
+            }
+        }
+
         if !lotto_deploy_map.is_empty() {
             if let Err(e) = doginals_pg::insert_lotto_lotteries(
                 &lotto_deploy_map,
@@ -504,13 +532,13 @@ pub async fn index_block(
             )
             .await
             {
-                return Err(format!("Failed to insert doge-lotto deploys: {}", e));
+                return Err(format!("Failed to insert DogeLotto deploys: {}", e));
             }
 
             for (lotto_id, deploy) in &lotto_deploy_map {
                 try_info!(
                     ctx,
-                    "doge-lotto deploy: id={} template={:?} draw_block={} cutoff_block={} ticket_price_koinu={}",
+                    "DogeLotto deploy: id={} template={:?} draw_block={} cutoff_block={} ticket_price_koinu={}",
                     lotto_id,
                     deploy.deploy.template,
                     deploy.deploy.draw_block,
@@ -531,7 +559,7 @@ pub async fn index_block(
                     Err(e) => {
                         try_warn!(
                             ctx,
-                            "Rejected doge-lotto mint {} ({}): unable to load deploy: {}",
+                            "Rejected DogeLotto mint {} ({}): unable to load deploy: {}",
                             parsed.inscription_id,
                             parsed.mint.lotto_id,
                             e
@@ -544,7 +572,7 @@ pub async fn index_block(
             let Some(deploy) = deploy else {
                 try_warn!(
                     ctx,
-                    "Rejected doge-lotto mint {} ({}): deploy not found",
+                    "Rejected DogeLotto mint {} ({}): deploy not found",
                     parsed.inscription_id,
                     parsed.mint.lotto_id
                 );
@@ -554,7 +582,7 @@ pub async fn index_block(
             if block_height > deploy.cutoff_block {
                 try_warn!(
                     ctx,
-                    "Rejected doge-lotto mint {} ({}): mint height {} exceeds cutoff {}",
+                    "Rejected DogeLotto mint {} ({}): mint height {} exceeds cutoff {}",
                     parsed.inscription_id,
                     parsed.mint.lotto_id,
                     block_height,
@@ -569,7 +597,7 @@ pub async fn index_block(
             ) {
                 try_warn!(
                     ctx,
-                    "Rejected doge-lotto mint {} ({}): seed numbers invalid for deploy config",
+                    "Rejected DogeLotto mint {} ({}): seed numbers invalid for deploy config",
                     parsed.inscription_id,
                     parsed.mint.lotto_id
                 );
@@ -584,7 +612,7 @@ pub async fn index_block(
             if !payment_ok {
                 try_warn!(
                     ctx,
-                    "Rejected doge-lotto mint {} ({}): {}",
+                    "Rejected DogeLotto mint {} ({}): {}",
                     parsed.inscription_id,
                     parsed.mint.lotto_id,
                     reason
@@ -609,7 +637,7 @@ pub async fn index_block(
             .await
             {
                 Ok(rows) => rows,
-                Err(e) => return Err(format!("Failed to insert doge-lotto tickets: {}", e)),
+                Err(e) => return Err(format!("Failed to insert DogeLotto tickets: {}", e)),
             }
         } else {
             Vec::new()
@@ -618,7 +646,7 @@ pub async fn index_block(
         for ticket in &inserted_lotto_tickets {
             try_info!(
                 ctx,
-                "doge-lotto ticket: lotto_id={} ticket_id={} inscription_id={} tip_percent={} minted_height={}",
+                "DogeLotto ticket: lotto_id={} ticket_id={} inscription_id={} tip_percent={} minted_height={}",
                 ticket.lotto_id,
                 ticket.ticket_id,
                 ticket.inscription_id,
@@ -634,12 +662,12 @@ pub async fn index_block(
             &ord_tx,
         )
         .await
-        .map_err(|e| format!("Failed to resolve doge-lotto draws: {}", e))?;
+        .map_err(|e| format!("Failed to resolve DogeLotto draws: {}", e))?;
 
         for winner in &resolved_lotto_winners {
             try_info!(
                 ctx,
-                "doge-lotto winner: lotto_id={} ticket_id={} rank={} payout_koinu={} gross_koinu={} tip_deduction_koinu={}",
+                "DogeLotto winner: lotto_id={} ticket_id={} rank={} payout_koinu={} gross_koinu={} tip_deduction_koinu={}",
                 winner.lotto_id,
                 winner.ticket_id,
                 winner.rank,
@@ -663,7 +691,7 @@ pub async fn index_block(
         for (inscription_id, owner_address) in &burn_events {
             try_info!(
                 ctx,
-                "doge-lotto burn: inscription_id={} owner={} (+1 Burn Point)",
+                "DogeLotto burn: inscription_id={} owner={} (+1 Burn Point)",
                 inscription_id,
                 owner_address,
             );
@@ -719,7 +747,7 @@ pub async fn index_block(
         {
             try_info!(
                 ctx,
-                "doge-lotto at block #{block_height}: {} deploy(s), {} ticket mint(s), {} winner record(s), {} burn(s)",
+                "DogeLotto at block #{block_height}: {} deploy(s), {} ticket mint(s), {} winner record(s), {} burn(s)",
                 lotto_deploy_map.len(),
                 inserted_lotto_tickets.len(),
                 resolved_lotto_winners.len(),
@@ -808,6 +836,7 @@ pub async fn rollback_block(
         doginals_pg::rollback_dogemap_claims(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogetags(block_height, &ord_tx).await?;
         doginals_pg::rollback_dogespells(block_height, &ord_tx).await?;
+        doginals_pg::rollback_dmp_ops(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_resolutions(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_burns(block_height, &ord_tx).await?;
         doginals_pg::rollback_lotto_tickets(block_height, &ord_tx).await?;

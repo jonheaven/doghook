@@ -12,7 +12,7 @@ Backward-traversal + reorg-safe (Chainhook engine) + Hiro-style predicate filter
 | Traversal | Forward (carry koinu ranges forward) | Backward (trace to coinbase on reveal) |
 | Reorg safety | Manual | Automatic ZMQ apply/rollback |
 | Selective indexing | No | Yes — MIME type + content prefix predicates |
-| DNS / Dogemap / doge-lotto | Query only | Indexed natively, queryable via CLI + webhooks |
+| DNS / Dogemap / DogeLotto | Query only | Indexed natively, queryable via CLI + webhooks |
 | Real-time hooks | No | Yes — POST JSON on every DNS/Dogemap event |
 | Use when | You want a local explorer or wallet | You're building an app, API, or analytics pipeline |
 
@@ -27,17 +27,18 @@ Both projects are completely independent codebases. kabosu does not import dog.
 | Dunes | Full | `kabosu dunes service start` |
 | DNS (Dogecoin Name System) | Full — 28 namespaces, first-wins, reorg-safe | `kabosu dns resolve`, `kabosu dns list` |
 | Dogemap (block claims) | Full — first-wins, reorg-safe | `kabosu dogemap status`, `kabosu dogemap list` |
-| doge-lotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `kabosu lotto deploy`, `kabosu lotto mint`, `kabosu lotto list`, `kabosu lotto status`, `kabosu lotto burn`, `kabosu lotto burners` |
+| DogeLotto | Full — deploys, atomic ticket mints, auto-resolution, Burners mechanic | `kabosu lotto deploy`, `kabosu lotto mint`, `kabosu lotto list`, `kabosu lotto status`, `kabosu lotto burn`, `kabosu lotto burners` |
 | Dogetag (on-chain graffiti) | Full — OP_RETURN text messages, reorg-safe | `kabosu dogetag list`, `kabosu dogetag search`, `kabosu dogetag address`, `kabosu dogetag send` |
 | DogeSpells | Full — OP_RETURN magic-prefix + CBOR spells, balances, NFT metadata snapshots, reorg-safe | `kabosu doginals index sync --only dogespells` plus `/dogespells/*` API routes |
+| DMP (DoginalMarket Protocol) | Full — inscription-based marketplace: listings, bids, settlements, cancels; reorg-safe | `GET /api/dmp/listings` |
 
-### doge-lotto
+### DogeLotto
 
 `kabosu lotto mint` broadcasts one atomic transaction that:
 
 - Pays the deploy's `prize_pool_address` the exact `ticket_price_koinu` amount.
 - Optionally pays an immutable protocol developer tip in the same transaction.
-- Inscribes the `doge-lotto` mint JSON in the same transaction.
+- Inscribes the `DogeLotto` mint JSON (with `"p":"DogeLotto"`) in the same transaction.
 
 This lets the indexer verify payment and tip commitments trustlessly.
 
@@ -123,7 +124,7 @@ kabosu lotto burners --config-path kabosu.toml --json
 - Winners have 30 days to claim their prizes by transferring the winning ticket inscription to their desired address.
 - After 30 days, unclaimed funds remain in the prize pool address to support ongoing kabosu development and infrastructure.
 
-**For Protocol-Level Lotteries (`doge-69-420` and `doge-max`):**
+**For Protocol-Level DogeLotto Deployments (`doge-69-420` and `doge-max`):**
 - This is **explicit public policy** — all participants acknowledge that unclaimed prizes fund future development.
 - The protocol developers maintain the prize pool wallets for these official lotteries.
 - Transparency: all prize pool addresses are publicly visible on-chain and in deploy inscriptions.
@@ -182,7 +183,7 @@ kabosu dogemap list --config-path kabosu.toml --limit 50
 kabosu dogemap status 1000000 --config-path kabosu.toml --json
 ```
 
-Dogemap is its own inscription metaprotocol and is indexed independently of DNS, Dogetag, DRC-20, and doge-lotto.
+Dogemap is its own inscription metaprotocol and is indexed independently of DNS, Dogetag, DRC-20, and DogeLotto.
 
 ### Dogetag — On-chain Graffiti
 
@@ -260,6 +261,40 @@ Web/API routes:
 GET /dogespells/balance/:ticker/:address
 GET /dogespells/history/:ticker/:address
 GET /dogespells/spells/:txid
+```
+
+### DoginalMarket Protocol (DMP)
+
+DMP is the open inscription-based marketplace standard for Doginals. Every listing, bid, settlement, and cancel is an on-chain inscription with `"protocol":"DMP","version":"1.0"`. PSBTs live entirely off-chain (IPFS or Arweave CID) — never on-chain.
+
+Enable in config (default `true` when section is absent):
+
+```toml
+[protocols.dmp]
+enabled = true
+```
+
+**Webhook events:** `dmp.listing`, `dmp.bid`, `dmp.settle`, `dmp.cancel`
+
+**API:**
+```text
+GET /api/dmp/listings          # Active (non-cancelled, non-settled) listings
+```
+
+**Wire format (inscription body):**
+```json
+{
+  "protocol": "DMP",
+  "version": "1.0",
+  "op": "listing | bid | settle | cancel",
+  "listing_id": "<inscription_id of original listing>",
+  "seller": "D... address",
+  "price_koinu": 4206900000,
+  "psbt_cid": "ipfs://Qm...",
+  "expiry_height": 5000000,
+  "nonce": 12345,
+  "signature": "hexsig"
+}
 ```
 
 ## Web Explorer

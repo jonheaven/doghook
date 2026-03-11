@@ -83,15 +83,21 @@ enabled = true
 [protocols.dogespells]
 enabled = true
 
-# doge-lotto meta-protocol. Inscriptions with "p":"doge-lotto" are indexed.
-# Set enabled = false to skip all lotto events.
+# DogeLotto meta-protocol. Inscriptions with "p":"DogeLotto" are indexed.
+# Set enabled = false to skip all DogeLotto events.
 [protocols.lotto]
 enabled = true
-content_prefixes = ['{"p":"doge-lotto"']
+content_prefixes = ['{"p":"DogeLotto"']
 protocol_dev_address = "DHrqn6H6ocgbRB1Szu7Q1sn1tVTfkpinnc"
 # Optional destination for immutable lotto mint tips (set this before using `kabosu lotto mint --tip`).
 burn_address = "DFmBjuJGGVRRomrdh1Eb77EnH1f9rtyHWp"
 # Optional, used for Burners later
+
+# DoginalMarket Protocol (DMP) — inscription-based open marketplace.
+# Inscriptions with "protocol":"DMP","version":"1.0" are indexed.
+# Set enabled = false to skip all DMP market events.
+[protocols.dmp]
+enabled = true
 
 # Webhook delivery configuration.
 # When enabled = true, kabosu POSTs a JSON event to every URL in the list
