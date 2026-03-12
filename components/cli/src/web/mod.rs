@@ -1,13 +1,19 @@
 use axum::{
+    extract::Request,
+    middleware::{from_fn, Next},
+    response::Response,
     response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
 use config::DogecoinConfig;
 use deadpool_postgres;
+use serde::Serialize;
 use serde_json::json;
+use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 
@@ -17,6 +23,51 @@ use handlers::*;
 
 /// Capacity of the SSE broadcast channel (events buffered per subscriber lag).
 const SSE_CHANNEL_CAPACITY: usize = 256;
+const MONITOR_EVENT_CAPACITY: usize = 256;
+const MONITOR_SAMPLE_CAPACITY: usize = 128;
+const MONITOR_SEEN_ID_CAPACITY: usize = 2_048;
+
+#[derive(Clone, Serialize)]
+pub struct MonitorEvent {
+    pub id: String,
+    pub kind: String,
+    pub protocol: String,
+    pub title: String,
+    pub summary: String,
+    pub link: Option<String>,
+    pub txid: Option<String>,
+    pub inscription_id: Option<String>,
+    pub block_height: Option<u64>,
+    pub timestamp: i64,
+}
+
+#[derive(Clone)]
+pub struct MonitorBlockSample {
+    pub height: u64,
+    pub timestamp: i64,
+}
+
+pub struct MonitorState {
+    pub recent_events: Mutex<VecDeque<MonitorEvent>>,
+    pub block_samples: Mutex<VecDeque<MonitorBlockSample>>,
+    pub seen_delivery_ids: Mutex<VecDeque<String>>,
+    pub webhook_deliveries: AtomicU64,
+    pub duplicate_deliveries: AtomicU64,
+    pub reorg_count: AtomicU64,
+}
+
+impl MonitorState {
+    fn new() -> Self {
+        Self {
+            recent_events: Mutex::new(VecDeque::with_capacity(MONITOR_EVENT_CAPACITY)),
+            block_samples: Mutex::new(VecDeque::with_capacity(MONITOR_SAMPLE_CAPACITY)),
+            seen_delivery_ids: Mutex::new(VecDeque::with_capacity(MONITOR_SEEN_ID_CAPACITY)),
+            webhook_deliveries: AtomicU64::new(0),
+            duplicate_deliveries: AtomicU64::new(0),
+            reorg_count: AtomicU64::new(0),
+        }
+    }
+}
 
 /// Shared application state for the web server
 #[derive(Clone)]
@@ -25,6 +76,7 @@ pub struct AppState {
     pub drc20_pool: Option<Arc<deadpool_postgres::Pool>>,
     pub dunes_pool: Option<Arc<deadpool_postgres::Pool>>,
     pub dogecoin_config: DogecoinConfig,
+    pub monitor: Arc<MonitorState>,
     /// Broadcast channel sender — indexer events arrive via POST /api/webhook
     /// and are fanned out to all /api/events SSE subscribers.
     pub event_tx: broadcast::Sender<String>,
@@ -41,11 +93,13 @@ pub async fn start_web_server(
     dogecoin_config: DogecoinConfig,
 ) -> Result<broadcast::Sender<String>, Box<dyn std::error::Error>> {
     let (event_tx, _) = broadcast::channel(SSE_CHANNEL_CAPACITY);
+    let monitor = Arc::new(MonitorState::new());
     let state = AppState {
         doginals_pool,
         drc20_pool,
         dunes_pool,
         dogecoin_config,
+        monitor,
         event_tx: event_tx.clone(),
     };
 
@@ -62,6 +116,7 @@ pub async fn start_web_server(
         .route("/api/dogemap/claims", get(get_dogemap_claims))
         .route("/api/dogetags", get(get_dogetags))
         .route("/api/dmp/listings", get(get_dmp_listings))
+        .route("/api/monitor", get(get_monitor))
         .route(
             "/dogespells/balance/:ticker/:address",
             get(get_dogespells_balance),
@@ -76,6 +131,8 @@ pub async fn start_web_server(
         .route("/content/:inscription_id", get(get_inscription_content))
         // HTML pages
         .route("/", get(index_page))
+        .route("/monitor", get(index_page))
+        .route("/status", get(index_page))
         .route("/inscriptions", get(inscriptions_page))
         .route("/drc20", get(drc20_page))
         .route("/dunes", get(dunes_page))
@@ -154,6 +211,7 @@ pub async fn start_web_server(
             "/v1/traders/:address/activity",
             get(get_marketplace_trader_activity),
         )
+        .layer(from_fn(additive_live_headers))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -171,6 +229,37 @@ async fn health_check() -> impl IntoResponse {
         "status": "ok",
         "service": "kabosu-explorer"
     }))
+}
+
+async fn additive_live_headers(request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_owned();
+    let is_live_api = path.starts_with("/api/")
+        || path.starts_with("/v1/")
+        || path.starts_with("/dogespells/");
+    let mut response = next.run(request).await;
+
+    if is_live_api {
+        response.headers_mut().insert(
+            "Cache-Control",
+            "no-store, no-cache, must-revalidate"
+                .parse()
+                .expect("valid cache-control"),
+        );
+        response.headers_mut().insert(
+            "Pragma",
+            "no-cache".parse().expect("valid pragma"),
+        );
+        response.headers_mut().insert(
+            "X-Additive-Viewing",
+            "immediate".parse().expect("valid additive-viewing header"),
+        );
+        response.headers_mut().insert(
+            "X-Partial-Results",
+            "true".parse().expect("valid partial-results header"),
+        );
+    }
+
+    response
 }
 
 async fn openapi_spec() -> impl IntoResponse {
@@ -206,6 +295,16 @@ async fn openapi_spec() -> impl IntoResponse {
                     "tags": ["System"],
                     "responses": {
                         "200": { "description": "Current chain tip and sync progress" }
+                    }
+                }
+            },
+            "/api/monitor": {
+                "get": {
+                    "summary": "Full live monitor snapshot",
+                    "operationId": "getMonitor",
+                    "tags": ["System"],
+                    "responses": {
+                        "200": { "description": "Dashboard-ready monitor payload with live feed, status, and node telemetry" }
                     }
                 }
             },

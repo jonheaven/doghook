@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     convert::Infallible,
     sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -18,7 +19,7 @@ use axum::{
 use deadpool_postgres::tokio_postgres::Row;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 
@@ -31,7 +32,7 @@ use bitcoin::{
 use dogecoin::bitcoincore_rpc::RpcApi;
 use doginals::envelope::ParsedEnvelope;
 
-use super::AppState;
+use super::{AppState, MonitorBlockSample, MonitorEvent};
 
 const KOINU_RELIC_TEMPLATE: &str =
     include_str!("../../../../../koinu-relic/src/inscription.html");
@@ -150,6 +151,235 @@ pub struct DogeSpellsSpellEntry {
     pub beam_to: Option<String>,
     pub beam_proof: Option<String>,
     pub raw_cbor: String,
+}
+
+#[derive(Clone, Serialize)]
+struct NodeTelemetry {
+    connected: bool,
+    block_height: Option<u64>,
+    difficulty: Option<f64>,
+    network_hashps: Option<f64>,
+    mempool_size: usize,
+    mempool_bytes: usize,
+    blockchain_size: Option<u64>,
+    verification_progress: Option<f64>,
+    connections: Option<usize>,
+    timestamp: i64,
+    error: Option<String>,
+}
+
+fn unix_timestamp_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+fn normalize_timestamp_millis(timestamp: i64) -> i64 {
+    if timestamp > 0 && timestamp < 1_000_000_000_000 {
+        timestamp.saturating_mul(1000)
+    } else {
+        timestamp
+    }
+}
+
+fn value_string(payload: &Value, key: &str) -> Option<String> {
+    payload
+        .get(key)
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string())
+}
+
+fn value_u64(payload: &Value, keys: &[&str]) -> Option<u64> {
+    for key in keys {
+        if let Some(value) = payload.get(*key) {
+            if let Some(parsed) = value.as_u64() {
+                return Some(parsed);
+            }
+            if let Some(parsed) = value.as_i64() {
+                if parsed >= 0 {
+                    return Some(parsed as u64);
+                }
+            }
+            if let Some(parsed) = value.as_str().and_then(|raw| raw.parse::<u64>().ok()) {
+                return Some(parsed);
+            }
+        }
+    }
+    None
+}
+
+fn build_monitor_title(event_name: &str) -> String {
+    match event_name {
+        "dns.registered" => "DNS registration".to_string(),
+        "dogemap.claimed" => "Dogemap claim".to_string(),
+        "dogetag.tagged" => "Dogetag".to_string(),
+        "dogelotto.ticket_minted" => "DogeLotto ticket".to_string(),
+        "dogelotto.winner_resolved" => "DogeLotto draw".to_string(),
+        "dogespells.mint" => "DogeSpells mint".to_string(),
+        "dogespells.transfer" => "DogeSpells transfer".to_string(),
+        "dogespells.burn" => "DogeSpells burn".to_string(),
+        "dogespells.beam_out" => "DogeSpells beam out".to_string(),
+        "dogespells.beam_in" => "DogeSpells beam in".to_string(),
+        "dmp.listing" => "DMP listing".to_string(),
+        "dmp.bid" => "DMP bid".to_string(),
+        "dmp.settle" => "DMP settlement".to_string(),
+        "dmp.cancel" => "DMP cancellation".to_string(),
+        _ => "Indexed item".to_string(),
+    }
+}
+
+fn build_monitor_summary(event_name: &str, payload: &Value) -> String {
+    match event_name {
+        "dns.registered" => format!(
+            "{} registered",
+            value_string(payload, "name").unwrap_or_else(|| "Unnamed DNS entry".to_string())
+        ),
+        "dogemap.claimed" => format!(
+            "Block #{} claimed",
+            value_u64(payload, &["block_number"])
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        ),
+        "dogetag.tagged" => value_string(payload, "message")
+            .unwrap_or_else(|| "New on-chain Dogetag".to_string()),
+        "dogelotto.ticket_minted" => format!(
+            "Ticket {} minted for {}",
+            value_string(payload, "ticket_id").unwrap_or_else(|| "unknown".to_string()),
+            value_string(payload, "lotto_id").unwrap_or_else(|| "DogeLotto".to_string())
+        ),
+        "dogelotto.winner_resolved" => format!(
+            "Winner {} resolved for {}",
+            value_string(payload, "ticket_id").unwrap_or_else(|| "unknown".to_string()),
+            value_string(payload, "lotto_id").unwrap_or_else(|| "DogeLotto".to_string())
+        ),
+        "dogespells.mint" | "dogespells.transfer" | "dogespells.burn" | "dogespells.beam_out"
+        | "dogespells.beam_in" => format!(
+            "{} {} {}",
+            value_string(payload, "ticker").unwrap_or_else(|| "spell".to_string()),
+            value_string(payload, "op").unwrap_or_else(|| "update".to_string()),
+            value_u64(payload, &["amount"])
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "0".to_string())
+        ),
+        "dmp.listing" => format!(
+            "Listing {} @ {} koinu",
+            value_string(payload, "inscription_id").unwrap_or_else(|| "unknown".to_string()),
+            value_u64(payload, &["price_koinu"])
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "0".to_string())
+        ),
+        "dmp.bid" => format!(
+            "Bid on {} @ {} koinu",
+            value_string(payload, "listing_id").unwrap_or_else(|| "unknown".to_string()),
+            value_u64(payload, &["price_koinu"])
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "0".to_string())
+        ),
+        "dmp.settle" => format!(
+            "Settled listing {}",
+            value_string(payload, "listing_id").unwrap_or_else(|| "unknown".to_string())
+        ),
+        "dmp.cancel" => format!(
+            "Cancelled listing {}",
+            value_string(payload, "listing_id").unwrap_or_else(|| "unknown".to_string())
+        ),
+        _ => "Indexed item available immediately".to_string(),
+    }
+}
+
+fn monitor_link(event_name: &str, txid: Option<&str>, inscription_id: Option<&str>) -> Option<String> {
+    if let Some(inscription_id) = inscription_id {
+        if !inscription_id.is_empty() {
+            return Some(format!("/content/{}", inscription_id));
+        }
+    }
+    if let Some(txid) = txid {
+        if !txid.is_empty() {
+            return Some(format!("https://dogechain.info/tx/{}", txid));
+        }
+    }
+    if event_name == "dogemap.claimed" {
+        return Some("https://dogemap.org".to_string());
+    }
+    None
+}
+
+fn normalize_monitor_event(payload: &Value) -> MonitorEvent {
+    let event_name = value_string(payload, "event").unwrap_or_else(|| "indexed.item".to_string());
+    let txid = value_string(payload, "tx_id")
+        .or_else(|| value_string(payload, "txid"))
+        .or_else(|| {
+            value_string(payload, "inscription_id").map(|inscription_id| {
+                inscription_id
+                    .split('i')
+                    .next()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+        });
+    let inscription_id = value_string(payload, "inscription_id");
+    let block_height = value_u64(
+        payload,
+        &["block_height", "claim_height", "minted_height", "resolved_height"],
+    );
+    let timestamp = unix_timestamp_millis();
+    let link = monitor_link(&event_name, txid.as_deref(), inscription_id.as_deref());
+
+    MonitorEvent {
+        id: value_string(payload, "_id")
+            .unwrap_or_else(|| format!("monitor-{}-{}", event_name, timestamp)),
+        kind: event_name
+            .split('.')
+            .next()
+            .unwrap_or("indexed")
+            .to_string(),
+        protocol: event_name.clone(),
+        title: build_monitor_title(&event_name),
+        summary: build_monitor_summary(&event_name, payload),
+        link,
+        txid,
+        inscription_id,
+        block_height,
+        timestamp,
+    }
+}
+
+fn record_monitor_event(state: &AppState, monitor_event: MonitorEvent) {
+    state
+        .monitor
+        .webhook_deliveries
+        .fetch_add(1, Ordering::Relaxed);
+
+    if monitor_event.protocol.contains("reorg") {
+        state
+            .monitor
+            .reorg_count
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    if let Some(height) = monitor_event.block_height {
+        let mut samples = state.monitor.block_samples.lock().expect("monitor block samples lock");
+        let should_push = samples
+            .back()
+            .map(|sample| sample.height != height)
+            .unwrap_or(true);
+        if should_push {
+            samples.push_back(MonitorBlockSample {
+                height,
+                timestamp: monitor_event.timestamp,
+            });
+            while samples.len() > super::MONITOR_SAMPLE_CAPACITY {
+                samples.pop_front();
+            }
+        }
+    }
+
+    let mut events = state.monitor.recent_events.lock().expect("monitor events lock");
+    events.push_front(monitor_event);
+    while events.len() > super::MONITOR_EVENT_CAPACITY {
+        events.pop_back();
+    }
 }
 
 pub async fn get_inscriptions(
@@ -560,6 +790,78 @@ pub async fn get_dogemap_claims(
     Ok(Json(claims))
 }
 
+async fn fetch_node_telemetry(config: config::DogecoinConfig) -> NodeTelemetry {
+    tokio::task::spawn_blocking(move || {
+        let ctx = dogecoin::utils::Context::empty();
+        let rpc = dogecoin::utils::bitcoind::dogecoin_get_client(&config, &ctx);
+        let block_height = rpc.get_block_count().ok();
+        let blockchain_info = rpc.get_blockchain_info().ok();
+        let mempool_info = rpc.get_mempool_info().ok();
+        let network_info = rpc.get_network_info().ok();
+        let network_hashps = rpc.get_network_hash_ps(Some(120), None).ok();
+
+        NodeTelemetry {
+            connected: block_height.is_some(),
+            block_height,
+            difficulty: blockchain_info.as_ref().map(|info| info.difficulty),
+            network_hashps,
+            mempool_size: mempool_info.as_ref().map(|info| info.size).unwrap_or_default(),
+            mempool_bytes: mempool_info.as_ref().map(|info| info.bytes).unwrap_or_default(),
+            blockchain_size: blockchain_info.as_ref().map(|info| info.size_on_disk),
+            verification_progress: blockchain_info
+                .as_ref()
+                .map(|info| info.verification_progress),
+            connections: network_info.as_ref().map(|info| info.connections),
+            timestamp: unix_timestamp_millis(),
+            error: if block_height.is_some() {
+                None
+            } else {
+                Some("Unable to reach Dogecoin RPC".to_string())
+            },
+        }
+    })
+    .await
+    .unwrap_or_else(|error| NodeTelemetry {
+        connected: false,
+        block_height: None,
+        difficulty: None,
+        network_hashps: None,
+        mempool_size: 0,
+        mempool_bytes: 0,
+        blockchain_size: None,
+        verification_progress: None,
+        connections: None,
+        timestamp: unix_timestamp_millis(),
+        error: Some(error.to_string()),
+    })
+}
+
+fn compute_blocks_per_second(samples: &[MonitorBlockSample]) -> f64 {
+    if samples.len() < 2 {
+        return 0.0;
+    }
+
+    let first = &samples[0];
+    let last = &samples[samples.len() - 1];
+    if last.timestamp <= first.timestamp || last.height <= first.height {
+        return 0.0;
+    }
+
+    (last.height - first.height) as f64 / ((last.timestamp - first.timestamp) as f64 / 1000.0)
+}
+
+fn compute_items_per_second(events: &[MonitorEvent]) -> f64 {
+    let now = unix_timestamp_millis();
+    let recent = events
+        .iter()
+        .filter(|event| {
+            now.saturating_sub(event.timestamp) <= 60_000
+                && (event.kind == "inscription" || event.inscription_id.is_some())
+        })
+        .count();
+    recent as f64 / 60.0
+}
+
 pub async fn get_status(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
@@ -569,33 +871,244 @@ pub async fn get_status(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let count_row = client
-        .query_one("SELECT COUNT(*) FROM inscriptions", &[])
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let total_inscriptions: i64 = count_row.get(0);
-
-    let latest_row = client
+    let summary_row = client
         .query_one(
-            "SELECT block_height::bigint, timestamp FROM inscriptions
-             ORDER BY number DESC LIMIT 1",
+            "SELECT
+                COALESCE((SELECT COUNT(*)::bigint FROM inscriptions), 0) AS total_inscriptions,
+                COALESCE((SELECT COUNT(*)::bigint FROM dogespells), 0) AS total_dogespells,
+                COALESCE((SELECT COUNT(*)::bigint FROM dns_names), 0) AS total_dns,
+                COALESCE((SELECT COUNT(*)::bigint FROM dogemap_claims), 0) AS total_dogemap,
+                COALESCE((SELECT COUNT(*)::bigint FROM dogetags), 0) AS total_dogetags,
+                COALESCE((SELECT COUNT(*)::bigint FROM dmp_listings), 0)
+                  + COALESCE((SELECT COUNT(*)::bigint FROM dmp_bids), 0)
+                  + COALESCE((SELECT COUNT(*)::bigint FROM dmp_settlements), 0)
+                  + COALESCE((SELECT COUNT(*)::bigint FROM dmp_cancels), 0) AS total_dmp,
+                COALESCE((SELECT COUNT(*)::bigint FROM dogelotto_tickets), 0)
+                  + COALESCE((SELECT COUNT(*)::bigint FROM dogelotto_winners), 0)
+                  + COALESCE((SELECT COUNT(*)::bigint FROM dogelotto_lotteries), 0) AS total_dogelotto,
+                GREATEST(
+                  COALESCE((SELECT MAX(block_height)::bigint FROM inscriptions), 0),
+                  COALESCE((SELECT MAX(block_height)::bigint FROM dogespells), 0),
+                  COALESCE((SELECT MAX(block_height)::bigint FROM dmp_listings), 0),
+                  COALESCE((SELECT MAX(block_height)::bigint FROM dmp_bids), 0),
+                  COALESCE((SELECT MAX(block_height)::bigint FROM dmp_settlements), 0),
+                  COALESCE((SELECT MAX(block_height)::bigint FROM dmp_cancels), 0),
+                  COALESCE((SELECT MAX(minted_height)::bigint FROM dogelotto_tickets), 0),
+                  COALESCE((SELECT MAX(resolved_height)::bigint FROM dogelotto_winners), 0),
+                  COALESCE((SELECT MAX(deploy_height)::bigint FROM dogelotto_lotteries), 0),
+                  COALESCE((SELECT MAX(block_height)::bigint FROM dogetags), 0),
+                  COALESCE((SELECT MAX(claim_height)::bigint FROM dogemap_claims), 0),
+                  COALESCE((SELECT MAX(block_height)::bigint FROM dns_names), 0)
+                ) AS latest_indexed_block,
+                (SELECT MAX(timestamp)::bigint FROM inscriptions) AS latest_block_timestamp",
             &[],
         )
         .await
-        .ok();
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let (latest_block, latest_timestamp) = if let Some(row) = latest_row {
-        (Some(row.get::<_, i64>(0)), Some(row.get::<_, i64>(1)))
-    } else {
-        (None, None)
-    };
+    let latest_indexed_block: i64 = summary_row.get("latest_indexed_block");
+    let latest_block_timestamp: Option<i64> = summary_row.get("latest_block_timestamp");
+    let total_inscriptions = summary_row.get::<_, i64>("total_inscriptions");
+    let total_dogespells = summary_row.get::<_, i64>("total_dogespells");
+    let total_dns = summary_row.get::<_, i64>("total_dns");
+    let total_dogemap = summary_row.get::<_, i64>("total_dogemap");
+    let total_dogetags = summary_row.get::<_, i64>("total_dogetags");
+    let total_dmp = summary_row.get::<_, i64>("total_dmp");
+    let total_dogelotto = summary_row.get::<_, i64>("total_dogelotto");
+    let total_indexed =
+        total_inscriptions + total_dogespells + total_dns + total_dogemap + total_dogetags
+            + total_dmp
+            + total_dogelotto;
+    let node = fetch_node_telemetry(state.dogecoin_config.clone()).await;
+    let chain_tip = node.block_height;
+    let sync_progress = chain_tip.map(|tip| {
+        if tip == 0 {
+            0.0
+        } else {
+            latest_indexed_block as f64 / tip as f64
+        }
+    });
+    let sample_snapshot: Vec<MonitorBlockSample> = state
+        .monitor
+        .block_samples
+        .lock()
+        .expect("monitor block samples lock")
+        .iter()
+        .cloned()
+        .collect();
+    let recent_events: Vec<MonitorEvent> = state
+        .monitor
+        .recent_events
+        .lock()
+        .expect("monitor events lock")
+        .iter()
+        .cloned()
+        .collect();
+    let buffered_events = recent_events.len();
 
     Ok(Json(json!({
         "status": "running",
+        "connected": node.connected,
+        "error": node.error,
+        "timestamp": node.timestamp,
+        "total_indexed": total_indexed,
         "total_inscriptions": total_inscriptions,
-        "latest_indexed_block": latest_block,
-        "latest_block_timestamp": latest_timestamp,
+        "latest_indexed_block": latest_indexed_block,
+        "latest_block_timestamp": latest_block_timestamp,
+        "chain_tip": chain_tip,
+        "sync_progress": sync_progress,
+        "blocks_per_second": compute_blocks_per_second(&sample_snapshot),
+        "inscriptions_per_second": compute_items_per_second(&recent_events),
+        "dogespells_count": total_dogespells,
+        "dns_count": total_dns,
+        "dogemap_count": total_dogemap,
+        "dogetag_count": total_dogetags,
+        "dmp_count": total_dmp,
+        "dogelotto_count": total_dogelotto,
+        "difficulty": node.difficulty,
+        "network_hashps": node.network_hashps,
+        "mempool_size": node.mempool_size,
+        "mempool_bytes": node.mempool_bytes,
+        "blockchain_size": node.blockchain_size,
+        "verification_progress": node.verification_progress,
+        "connections": node.connections,
+        "buffered_events": buffered_events,
+        "webhook_deliveries": state.monitor.webhook_deliveries.load(Ordering::Relaxed),
+        "duplicate_deliveries": state.monitor.duplicate_deliveries.load(Ordering::Relaxed),
+        "reorg_count": state.monitor.reorg_count.load(Ordering::Relaxed),
+        "additive_viewing": true,
+        "partial_results": true,
+    })))
+}
+
+pub async fn get_monitor(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let client = state
+        .doginals_pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let summary_value = get_status(State(state.clone())).await?.0;
+
+    let recent_inscriptions = client
+        .query(
+            "SELECT inscription_id, number::bigint, block_height::bigint, timestamp, content_type
+             FROM inscriptions
+             ORDER BY number DESC
+             LIMIT 12",
+            &[],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut feed: Vec<MonitorEvent> = state
+        .monitor
+        .recent_events
+        .lock()
+        .expect("monitor events lock")
+        .iter()
+        .cloned()
+        .collect();
+
+    for row in recent_inscriptions {
+        let inscription_id: String = row.get(0);
+        if feed
+            .iter()
+            .any(|event| event.inscription_id.as_deref() == Some(inscription_id.as_str()))
+        {
+            continue;
+        }
+
+        let inscription_number: i64 = row.get(1);
+        let block_height: i64 = row.get(2);
+        let block_timestamp: i64 = row.get(3);
+        let content_type: Option<String> = row.get(4);
+
+        feed.push(MonitorEvent {
+            id: format!("inscription-{}", inscription_id),
+            kind: "inscription".to_string(),
+            protocol: "inscription.indexed".to_string(),
+            title: "Inscription indexed".to_string(),
+            summary: format!(
+                "#{} {}",
+                inscription_number,
+                content_type.unwrap_or_else(|| "content".to_string())
+            ),
+            link: Some(format!("/content/{}", inscription_id)),
+            txid: inscription_id
+                .split('i')
+                .next()
+                .map(|value| value.to_string()),
+            inscription_id: Some(inscription_id),
+            block_height: Some(block_height as u64),
+            timestamp: normalize_timestamp_millis(block_timestamp),
+        });
+    }
+
+    feed.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    feed.truncate(40);
+
+    let total_indexed = summary_value
+        .get("total_indexed")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let buffered_events = feed.len();
+
+    let buffer_memory_bytes =
+        serde_json::to_string(&feed).unwrap_or_default().as_bytes().len() as u64;
+    let blocks_per_second = {
+        let samples: Vec<MonitorBlockSample> = state
+            .monitor
+            .block_samples
+            .lock()
+            .expect("monitor block samples lock")
+            .iter()
+            .cloned()
+            .collect();
+        compute_blocks_per_second(&samples)
+    };
+
+    Ok(Json(json!({
+        "status": summary_value,
+        "stats": {
+            "total_indexed": total_indexed,
+            "memory_usage_bytes": buffer_memory_bytes,
+            "memory_usage_mb": buffer_memory_bytes as f64 / 1024.0 / 1024.0,
+            "reorg_count": state.monitor.reorg_count.load(Ordering::Relaxed),
+            "webhook_deliveries": state.monitor.webhook_deliveries.load(Ordering::Relaxed),
+            "duplicate_deliveries": state.monitor.duplicate_deliveries.load(Ordering::Relaxed),
+            "blocks_per_second": blocks_per_second,
+            "buffered_events": buffered_events,
+        },
+        "protocol_counts": {
+            "inscriptions": summary_value.get("total_inscriptions").cloned().unwrap_or(Value::Null),
+            "dogespells": summary_value.get("dogespells_count").cloned().unwrap_or(Value::Null),
+            "dmp": summary_value.get("dmp_count").cloned().unwrap_or(Value::Null),
+            "dogelotto": summary_value.get("dogelotto_count").cloned().unwrap_or(Value::Null),
+            "dns": summary_value.get("dns_count").cloned().unwrap_or(Value::Null),
+            "dogemap": summary_value.get("dogemap_count").cloned().unwrap_or(Value::Null),
+            "dogetag": summary_value.get("dogetag_count").cloned().unwrap_or(Value::Null),
+        },
+        "node": {
+            "connected": summary_value.get("connected").cloned().unwrap_or(Value::Bool(false)),
+            "block_height": summary_value.get("chain_tip").cloned().unwrap_or(Value::Null),
+            "difficulty": summary_value.get("difficulty").cloned().unwrap_or(Value::Null),
+            "network_hashps": summary_value.get("network_hashps").cloned().unwrap_or(Value::Null),
+            "mempool_size": summary_value.get("mempool_size").cloned().unwrap_or(Value::Null),
+            "mempool_bytes": summary_value.get("mempool_bytes").cloned().unwrap_or(Value::Null),
+            "blockchain_size": summary_value.get("blockchain_size").cloned().unwrap_or(Value::Null),
+            "verification_progress": summary_value
+                .get("verification_progress")
+                .cloned()
+                .unwrap_or(Value::Null),
+            "connections": summary_value.get("connections").cloned().unwrap_or(Value::Null),
+            "timestamp": summary_value.get("timestamp").cloned().unwrap_or(Value::Null),
+            "error": summary_value.get("error").cloned().unwrap_or(Value::Null),
+        },
+        "feed": feed,
+        "immediate_additive_viewing": true,
     })))
 }
 
@@ -950,6 +1463,32 @@ pub async fn sse_events(
 /// kabosu automatically registers http://127.0.0.1:{port}/api/webhook as a webhook
 /// URL at startup, so no manual config is needed.
 pub async fn receive_webhook(State(state): State<super::AppState>, body: String) -> StatusCode {
+    if let Ok(payload) = serde_json::from_str::<Value>(&body) {
+        if let Some(delivery_id) = value_string(&payload, "_id") {
+            let mut seen = state
+                .monitor
+                .seen_delivery_ids
+                .lock()
+                .expect("monitor seen delivery ids lock");
+
+            if seen.iter().any(|existing| existing == &delivery_id) {
+                state
+                    .monitor
+                    .duplicate_deliveries
+                    .fetch_add(1, Ordering::Relaxed);
+                return StatusCode::OK;
+            }
+
+            seen.push_back(delivery_id);
+            while seen.len() > super::MONITOR_SEEN_ID_CAPACITY {
+                seen.pop_front();
+            }
+        }
+
+        let monitor_event = normalize_monitor_event(&payload);
+        record_monitor_event(&state, monitor_event);
+    }
+
     // Ignore send errors — they just mean no SSE clients are connected right now.
     let _ = state.event_tx.send(body);
     StatusCode::OK
