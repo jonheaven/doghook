@@ -60,8 +60,8 @@ But "superior" depends on what you need. Forcing everyone into Postgres would ha
 
 ```bash
 # Keep both repos side-by-side
-C:\Users\jheav\Desktop\doge\dog          # lightweight CLI companion + wallet
-C:\Users\jheav\Desktop\doge\kabosu      # main production indexer
+C:/Users/<USER>/Desktop/doge/dog          # lightweight CLI companion + wallet
+C:/Users/<USER>/Desktop/doge/kabosu      # main production indexer
 
 # Daily workflow
 kabosu doginals index                   # runs forever with webhooks

@@ -1,0 +1,62 @@
+# Kabosu Configuration Example
+# Replace environment variables as needed, or copy to kabosu.toml and edit
+
+[storage]
+working_dir = "data"
+
+[metrics]
+enabled = true
+prometheus_port = 9153
+
+[web]
+enabled = true
+port = 8080
+
+[doginals.db]
+database = "doginals"
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "postgres"
+
+[doginals.predicates]
+enabled = false
+
+[doginals.meta_protocols.drc20]
+enabled = true
+lru_cache_size = 10000
+
+[doginals.meta_protocols.drc20.db]
+database = "drc20"
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "postgres"
+
+[dunes]
+lru_cache_size = 10000
+
+[dunes.db]
+database = "dunes"
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "postgres"
+
+[dogecoin]
+network = "mainnet"
+rpc_url = "http://127.0.0.1:22555"
+zmq_url = "tcp://127.0.0.1:28332"
+dogecoin_data_dir = "${USERPROFILE}/DogecoinData"
+blk_index_copy_dir = "${USERPROFILE}/Desktop/blk-index"
+
+[protocols.dns]
+enabled = true
+
+[protocols.dogemap]
+enabled = true
+
+[protocols.dogetag]
+enabled = true
+
+# Copy this file to kabosu.toml and edit as needed. Use environment variables for user-specific paths.

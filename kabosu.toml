@@ -61,7 +61,7 @@ zmq_url = "tcp://127.0.0.1:28332"
 # Path to Dogecoin blockchain data directory for faster .blk file indexing (5-20× faster than RPC)
 dogecoin_data_dir = "F:\\DogecoinData"
 # Shared shadow copy of blocks/index to avoid duplicating ~LevelDB files in this repo data dir.
-blk_index_copy_dir = "C:\\Users\\jheav\\AppData\\Roaming\\dog\\blk-index"
+blk_index_copy_dir = "C:/Users/jheav/Desktop/blk-index"  # Local user path for scripts
 
 # Protocol enable/disable switches.
 # Set enabled = false to skip indexing that protocol entirely.

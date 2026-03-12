@@ -395,6 +395,10 @@ All APIs return JSON. Use these to build custom dashboards or integrations.
 
 ## Quick Start
 
+**User privacy note:** All user-specific configuration (like usernames and paths) is handled via environment variables and local config files that are ignored by git. No private user info will be committed to the repository.
+
+See [SETUP.md](SETUP.md) for a step-by-step setup guide.
+
 1. Run a Dogecoin Core node with:
 
    ```bash

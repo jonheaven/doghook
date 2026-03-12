@@ -8,7 +8,7 @@ The two namespaces are identical in syntax and flags — just swap `doginals` �
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--config-path <PATH>` | Path to `kabosu.toml` (default: `./kabosu.toml` or `~/.config/kabosu.toml`) | `--config-path /etc/kabosu.toml` |
-| `--data-dir <PATH>` | Override Dogecoin Core data directory (overrides config file) | `--data-dir C:\Dogecoin` |
+| `--data-dir <PATH>` | Override Dogecoin Core data directory (overrides config file) | `--data-dir %USERPROFILE%/Desktop/` |
 
 ---
 
@@ -107,7 +107,7 @@ kabosu doginals index refresh-blk-index
 
 **Output example:**
 ```
-BlkReader: index copy refreshed (3 updated, 1247 unchanged) → C:\Users\jheav\.kabosu\blk-index
+BlkReader: index copy refreshed (3 updated, 1247 unchanged) → C:/Users/<USER>/Desktop/
 Run 'kabosu doginals index' to enjoy 5-20× faster sync!
 ```
 
