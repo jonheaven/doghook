@@ -2428,11 +2428,11 @@ fn resolve_closest_fingerprint_impl(
                 resolved_height,
                 rank: display_rank,
                 score: 0, // not used in fingerprint mode
-                payout_bps: bps,
-                gross_payout_koinu: payout,
+                payout_bps,
+                gross_payout_koinu,
                 tip_percent: fp_ticket.ticket.tip_percent,
-                tip_deduction_koinu: tip_deduction,
-                payout_koinu: payout_net,
+                tip_deduction_koinu,
+                payout_koinu,
                 seed_numbers: fp_ticket.ticket.seed_numbers.clone(),
                 drawn_numbers: draw.main_numbers.clone(),
                 bonus_drawn_numbers: draw.bonus_numbers.clone(),
@@ -2543,7 +2543,7 @@ fn winner_from_scored_ticket(
         tip_percent: ticket.tip_percent,
         tip_deduction_koinu,
         payout_koinu,
-        seed_numbers: ticket.seed_numbers,
+        seed_numbers: ticket.seed_numbers.clone(),
         drawn_numbers: draw.main_numbers.clone(),
         bonus_drawn_numbers: draw.bonus_numbers.clone(),
         fingerprint_distance: None,
@@ -3400,18 +3400,28 @@ pub async fn insert_dmp_ops<T: GenericClient>(
     for chunk in listings.chunks(500) {
         let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
         for (l, parsed) in chunk {
-            params.extend_from_slice(&[
+            let price_koinu_i64 = l.price_koinu as i64;
+            let price_koinu_str = price_koinu_i64.to_string();
+            let expiry_height_i64 = l.expiry_height as i64;
+            let expiry_height_str = expiry_height_i64.to_string();
+            let nonce_i64 = l.nonce as i64;
+            let nonce_str = nonce_i64.to_string();
+            let block_height_i64 = parsed.block_height as i64;
+            let block_timestamp_i64 = parsed.block_timestamp as i64;
+            let block_timestamp_str = block_timestamp_i64.to_string();
+            let values = [
                 &l.inscription_id,
                 &l.inscription_id,
                 &l.seller,
-                &(l.price_koinu as i64),
+                &price_koinu_str,
                 &l.psbt_cid,
-                &(l.expiry_height as i64),
-                &(l.nonce as i64),
+                &expiry_height_str,
+                &nonce_str,
                 &l.signature,
-                &(parsed.block_height as i64),
-                &(parsed.block_timestamp as i64),
-            ]);
+                &block_height_i64,
+                &block_timestamp_str,
+            ];
+            params.extend_from_slice(&values);
         }
         client
             .query(
@@ -3432,18 +3442,28 @@ pub async fn insert_dmp_ops<T: GenericClient>(
     for chunk in bids.chunks(500) {
         let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
         for (b, parsed) in chunk {
-            params.extend_from_slice(&[
+            let price_koinu_i64 = b.price_koinu as i64;
+            let price_koinu_str = price_koinu_i64.to_string();
+            let expiry_height_i64 = b.expiry_height as i64;
+            let expiry_height_str = expiry_height_i64.to_string();
+            let nonce_i64 = b.nonce as i64;
+            let nonce_str = nonce_i64.to_string();
+            let block_height_i64 = parsed.block_height as i64;
+            let block_timestamp_i64 = parsed.block_timestamp as i64;
+            let block_timestamp_str = block_timestamp_i64.to_string();
+            let values = [
                 &b.inscription_id,
                 &b.listing_id,
                 &b.bidder,
-                &(b.price_koinu as i64),
+                &price_koinu_str,
                 &b.psbt_cid,
-                &(b.expiry_height as i64),
-                &(b.nonce as i64),
+                &expiry_height_str,
+                &nonce_str,
                 &b.signature,
-                &(parsed.block_height as i64),
-                &(parsed.block_timestamp as i64),
-            ]);
+                &block_height_i64,
+                &block_timestamp_str,
+            ];
+            params.extend_from_slice(&values);
         }
         client
             .query(
@@ -3482,17 +3502,26 @@ pub async fn insert_dmp_ops<T: GenericClient>(
     for chunk in settlements.chunks(500) {
         let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
         for (s, parsed) in chunk {
-            params.extend_from_slice(&[
+            let nonce_i64 = s.nonce as i64;
+            let nonce_str = nonce_i64.to_string();
+            let block_height_i64 = parsed.block_height as i64;
+            let block_height_str = block_height_i64.to_string();
+            let block_timestamp_i64 = parsed.block_timestamp as i64;
+            let values = [
                 &s.inscription_id,
                 &s.listing_id,
-                &s.bid_id,
+                match &s.bid_id {
+                    Some(bid) => bid,
+                    None => "",
+                },
                 &s.settler,
                 &s.psbt_cid,
-                &(s.nonce as i64),
+                &nonce_str,
                 &s.signature,
-                &(parsed.block_height as i64),
-                &(parsed.block_timestamp as i64),
-            ]);
+                &block_height_str,
+                &block_timestamp_i64,
+            ];
+            params.extend_from_slice(&values);
         }
         client
             .query(
@@ -3522,15 +3551,21 @@ pub async fn insert_dmp_ops<T: GenericClient>(
     for chunk in cancels.chunks(500) {
         let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
         for (c, parsed) in chunk {
-            params.extend_from_slice(&[
+            let nonce_i64 = c.nonce as i64;
+            let nonce_str = nonce_i64.to_string();
+            let block_height_i64 = parsed.block_height as i64;
+            let block_height_str = block_height_i64.to_string();
+            let block_timestamp_i64 = parsed.block_timestamp as i64;
+            let values = [
                 &c.inscription_id,
                 &c.listing_id,
                 &c.canceller,
-                &(c.nonce as i64),
+                &nonce_str,
                 &c.signature,
-                &(parsed.block_height as i64),
-                &(parsed.block_timestamp as i64),
-            ]);
+                &block_height_str,
+                &block_timestamp_i64,
+            ];
+            params.extend_from_slice(&values);
         }
         client
             .query(
@@ -3849,7 +3884,7 @@ mod test {
                     .hash("0x000000000000000000024d4c784521e54b6f4a5945376ae6e248cee1ed2c0627".to_string())
                     .add_transaction(
                         TestTransactionBuilder::new()
-                            .hash("0xb61b0172d95e266c18aea0c624db987e971a5d6d4ebc2aaed85da4642d635735".to_string())
+                            .hash("0xb61b0172d95e266c18aea0c624db987e971a5d6d4ebc2aaed85da4642d6357355".to_string())
                             .add_ordinal_operation(OrdinalOperation::InscriptionRevealed(
                                 OrdinalInscriptionRevealData {
                                     content_bytes: "0x7b200a20202270223a20226272632d3230222c0a2020226f70223a20226465706c6f79222c0a2020227469636b223a20226f726469222c0a2020226d6178223a20223231303030303030222c0a2020226c696d223a202231303030220a7d".to_string(),
@@ -4022,11 +4057,11 @@ mod test {
                 assert_eq!(1, get_recursive_count(false, &client).await);
                 assert_eq!(
                     0,
-                    get_address_count("324A7GHA2azecbVBAFy4pzEhcPT1GjbUAp", &client).await
+                    get_address_count("3DnzPvLPH1jA9EqQzq3Fgo9BMDya4eG1ay", &client).await
                 );
                 assert_eq!(
                     1,
-                    get_address_count("3DnzPvLPH1jA9EqQzq3Fgo9BMDya4eG1ay", &client).await
+                    get_address_count("324A7GHA2azecbVBAFy4pzEhcPT1GjbUAp", &client).await
                 );
                 assert_eq!(
                     1,

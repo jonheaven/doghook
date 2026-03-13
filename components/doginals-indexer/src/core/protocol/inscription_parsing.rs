@@ -293,7 +293,7 @@ pub fn parse_inscriptions_from_standardized_tx(
 
         // Most of these fields will be calculated later when we know for certain which koinu contains this inscription.
         let reveal_data = OrdinalInscriptionRevealData {
-            content_type,
+            content_type: content_type.clone(),
             content_bytes,
             content_length: inscription_content_bytes.len(),
             inscription_id: inscription_id.to_string(),
@@ -330,7 +330,7 @@ pub fn parse_inscriptions_from_standardized_tx(
         if let Some(drc20) = config.ordinals_drc20_config() {
             if drc20.enabled
                 && block_identifier.index >= drc20_activation_height(network)
-                && (content_type.starts_with("application/json")
+                && (content_type.clone().starts_with("application/json")
                     || inscription_content_bytes.starts_with(b"{"))
             {
                 match parse_drc20_operation(&inscription) {

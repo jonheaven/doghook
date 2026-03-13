@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use config::Config;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, TableDefinition};
 
 const CHECKPOINT_TABLE: TableDefinition<&str, u64> = TableDefinition::new("checkpoint");
 const INDEXER_KEY: &str = "doginals:last_height";

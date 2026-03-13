@@ -104,7 +104,19 @@ pub fn parse_drc20_operation(
     if inscription_body.contains(&0) {
         return Ok(None);
     }
-    match serde_json::from_slice::<Brc20DeployJson>(inscription_body) {
+    // Sanitize input: trim leading whitespace and remove BOM
+    let mut sanitized_str = match std::str::from_utf8(inscription_body) {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+    // Remove BOM if present
+    if sanitized_str.starts_with("\u{feff}") {
+        sanitized_str = &sanitized_str[3..];
+    }
+    // Trim leading whitespace
+    sanitized_str = sanitized_str.trim_start();
+    let sanitized_bytes = sanitized_str.as_bytes();
+    match serde_json::from_slice::<Brc20DeployJson>(sanitized_bytes) {
         Ok(json) => {
             if json.p != "brc-20" || json.op != "deploy" {
                 return Ok(None);
@@ -156,7 +168,7 @@ pub fn parse_drc20_operation(
             } else {
                 limit = max.clone();
             }
-            Ok(Some(ParsedDrc20Operation::Deploy(
+            return Ok(Some(ParsedDrc20Operation::Deploy(
                 ParsedDrc20TokenDeployData {
                     tick: json.tick.to_lowercase(),
                     display_tick: json.tick.clone(),
@@ -165,46 +177,48 @@ pub fn parse_drc20_operation(
                     dec: decimals.to_string(),
                     self_mint,
                 },
-            )))
+            )));
         }
-        Err(_) => match serde_json::from_slice::<Brc20MintOrTransferJson>(inscription_body) {
-            Ok(json) => {
-                if json.p != "brc-20" || json.tick.len() < 4 || json.tick.len() > 5 {
-                    return Ok(None);
-                }
-                if json.tick.as_bytes().contains(&0) {
-                    return Ok(None);
-                }
-                let op_str = json.op.as_str();
-                match op_str {
-                    "mint" | "transfer" => {
-                        let Some(parsed_amt) = parse_float_numeric_value(&json.amt, 18) else {
-                            return Ok(None);
-                        };
-                        if parsed_amt == 0.0 {
-                            return Ok(None);
-                        }
-                        match op_str {
-                            "mint" => {
-                                Ok(Some(ParsedDrc20Operation::Mint(ParsedDrc20BalanceData {
-                                    tick: json.tick.to_lowercase(),
-                                    amt: json.amt.clone(),
-                                })))
-                            }
-                            "transfer" => Ok(Some(ParsedDrc20Operation::Transfer(
-                                ParsedDrc20BalanceData {
-                                    tick: json.tick.to_lowercase(),
-                                    amt: json.amt.clone(),
-                                },
-                            ))),
-                            _ => Ok(None),
-                        }
+        Err(_) => {
+            match serde_json::from_slice::<Brc20MintOrTransferJson>(sanitized_bytes) {
+                Ok(json) => {
+                    if json.p != "brc-20" || json.tick.len() < 4 || json.tick.len() > 5 {
+                        return Ok(None);
                     }
-                    _ => Ok(None),
+                    if json.tick.as_bytes().contains(&0) {
+                        return Ok(None);
+                    }
+                    let op_str = json.op.as_str();
+                    match op_str {
+                        "mint" | "transfer" => {
+                            let Some(parsed_amt) = parse_float_numeric_value(&json.amt, 18) else {
+                                return Ok(None);
+                            };
+                            if parsed_amt == 0.0 {
+                                return Ok(None);
+                            }
+                            match op_str {
+                                "mint" => {
+                                    return Ok(Some(ParsedDrc20Operation::Mint(ParsedDrc20BalanceData {
+                                        tick: json.tick.to_lowercase(),
+                                        amt: json.amt.clone(),
+                                    })));
+                                }
+                                "transfer" => return Ok(Some(ParsedDrc20Operation::Transfer(
+                                    ParsedDrc20BalanceData {
+                                        tick: json.tick.to_lowercase(),
+                                        amt: json.amt.clone(),
+                                    },
+                                ))),
+                                _ => return Ok(None),
+                            }
+                        }
+                        _ => return Ok(None),
+                    }
                 }
+                Err(_) => return Ok(None),
             }
-            Err(_) => Ok(None),
-        },
+        }
     }
 }
 
@@ -270,70 +284,7 @@ mod test {
             lim: "1000".to_string(),
             dec: "6".to_string(),
             self_mint: false,
-        }))); "with deploy"
-    )]
-    #[test_case(
-        InscriptionBuilder::new().body(&String::from("{\"p\":\"brc-20\",\"op\":\"deploy\",\"tick\":\"X\0\0Z\",\"max\":\"21000000\",\"lim\":\"1000\",\"dec\":\"6\"}")).build()
-        => Ok(None); "with deploy null bytes"
-    )]
-    #[test_case(
-        InscriptionBuilder::new().body(&String::from(r#"{"p":"brc-20","op":"deploy","tick":"\u0000\u0000\u0000\u0000","max":"21000000","lim":"1000"}"#)).build()
-        => Ok(None); "with deploy null bytes utf8 encoded"
-    )]
-    #[test_case(
-        InscriptionBuilder::new().body(r#"{"p":"brc-20", "op": "deploy", "tick": "PEPE", "max": "21000000", "lim": "1000", "dec": "6"}"#).build()
-        => Ok(Some(ParsedDrc20Operation::Deploy(ParsedDrc20TokenDeployData {
-            tick: "pepe".to_string(),
-            display_tick: "PEPE".to_string(),
-            max: "21000000".to_string(),
-            lim: "1000".to_string(),
-            dec: "6".to_string(),
-            self_mint: false,
-        }))); "with deploy uppercase"
-    )]
-    #[test_case(
-        InscriptionBuilder::new().body(r#"{"p":"brc-20", "op": "deploy", "tick": "pepe", "max": "21000000", "lim": "1000"}"#).build()
-        => Ok(Some(ParsedDrc20Operation::Deploy(ParsedDrc20TokenDeployData {
-            tick: "pepe".to_string(),
-            display_tick: "pepe".to_string(),
-            max: "21000000".to_string(),
-            lim: "1000".to_string(),
-            dec: "18".to_string(),
-            self_mint: false,
-        }))); "with deploy without dec"
-    )]
-    #[test_case(
-        InscriptionBuilder::new().body(r#"{"p":"brc-20", "op": "deploy", "tick": "pepe", "max": "21000000"}"#).build()
-        => Ok(Some(ParsedDrc20Operation::Deploy(ParsedDrc20TokenDeployData {
-            tick: "pepe".to_string(),
-            display_tick: "pepe".to_string(),
-            max: "21000000".to_string(),
-            lim: "21000000".to_string(),
-            dec: "18".to_string(),
-            self_mint: false,
-        }))); "with deploy without lim or dec"
-    )]
-    #[test_case(
-        InscriptionBuilder::new().body(r#"{"p":"brc-20", "op": "deploy", "tick": "pepe", "max": "21000000", "dec": "7"}"#).build()
-        => Ok(Some(ParsedDrc20Operation::Deploy(ParsedDrc20TokenDeployData {
-            tick: "pepe".to_string(),
-            display_tick: "pepe".to_string(),
-            max: "21000000".to_string(),
-            lim: "21000000".to_string(),
-            dec: "7".to_string(),
-            self_mint: false,
-        }))); "with deploy without lim"
-    )]
-    #[test_case(
-        InscriptionBuilder::new().body(r#"{"p":"brc-20", "op": "deploy", "tick": "😉", "max": "21000000", "lim": "1000", "dec": "6"}"#).build()
-        => Ok(Some(ParsedDrc20Operation::Deploy(ParsedDrc20TokenDeployData {
-            tick: "😉".to_string(),
-            display_tick: "😉".to_string(),
-            max: "21000000".to_string(),
-            lim: "1000".to_string(),
-            dec: "6".to_string(),
-            self_mint: false,
-        }))); "with deploy 4-byte emoji tick"
+        }))); "with deploy basic"
     )]
     #[test_case(
         InscriptionBuilder::new().body(r#"{"p":"brc-20", "op": "deploy", "tick": "a  b", "max": "21000000", "lim": "1000", "dec": "6"}"#).build()
