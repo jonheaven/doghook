@@ -212,8 +212,8 @@ fn build_monitor_title(event_name: &str) -> String {
         "dns.registered" => "DNS registration".to_string(),
         "dogemap.claimed" => "Dogemap claim".to_string(),
         "dogetag.tagged" => "Dogetag".to_string(),
-        "dogelotto.ticket_minted" => "DogeLotto ticket".to_string(),
-        "dogelotto.winner_resolved" => "DogeLotto draw".to_string(),
+        "dogelotto.ticket_minted" => "Lucky Ðraw ticket".to_string(),
+        "dogelotto.winner_resolved" => "Lucky Ðraw draw".to_string(),
         "dogespells.mint" => "DogeSpells mint".to_string(),
         "dogespells.transfer" => "DogeSpells transfer".to_string(),
         "dogespells.burn" => "DogeSpells burn".to_string(),
@@ -245,12 +245,12 @@ fn build_monitor_summary(event_name: &str, payload: &Value) -> String {
         "dogelotto.ticket_minted" => format!(
             "Ticket {} minted for {}",
             value_string(payload, "ticket_id").unwrap_or_else(|| "unknown".to_string()),
-            value_string(payload, "lotto_id").unwrap_or_else(|| "DogeLotto".to_string())
+            value_string(payload, "lotto_id").unwrap_or_else(|| "Lucky Ðraw".to_string())
         ),
         "dogelotto.winner_resolved" => format!(
             "Winner {} resolved for {}",
             value_string(payload, "ticket_id").unwrap_or_else(|| "unknown".to_string()),
-            value_string(payload, "lotto_id").unwrap_or_else(|| "DogeLotto".to_string())
+            value_string(payload, "lotto_id").unwrap_or_else(|| "Lucky Ðraw".to_string())
         ),
         "dogespells.mint"
         | "dogespells.transfer"

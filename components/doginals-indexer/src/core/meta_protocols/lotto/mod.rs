@@ -1,48 +1,73 @@
 use rand::rng;
 /// DogeLotto meta-protocol structs and fingerprint logic
-
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LottoDeploy {
+    #[serde(alias = "li")]
     pub lotto_id: String,
+    #[serde(alias = "te")]
     pub template: LottoTemplate,
+    #[serde(alias = "db")]
     pub draw_block: u64,
+    #[serde(alias = "cb")]
     pub cutoff_block: u64,
+    #[serde(alias = "pk")]
     pub ticket_price_koinu: u64,
+    #[serde(alias = "pa")]
     pub prize_pool_address: String,
+    #[serde(alias = "fp")]
     pub fee_percent: u8,
+    #[serde(alias = "mn")]
     pub main_numbers: NumberConfig,
+    #[serde(alias = "bn")]
     pub bonus_numbers: NumberConfig,
+    #[serde(alias = "rm")]
     pub resolution_mode: ResolutionMode,
+    #[serde(alias = "re")]
     pub rollover_enabled: bool,
+    #[serde(alias = "gm")]
     pub guaranteed_min_prize_koinu: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NumberConfig {
+    #[serde(alias = "p")]
     pub pick: u16,
+    #[serde(alias = "m")]
     pub max: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LottoTemplate {
+    #[serde(alias = "closest_wins")]
     ClosestWins,
+    #[serde(alias = "6_49_classic")]
     Six49Classic,
+    #[serde(alias = "life_annuity")]
     LifeAnnuity,
+    #[serde(alias = "powerball_dual_drum")]
     PowerballDualDrum,
+    #[serde(alias = "rollover_jackpot")]
     RolloverJackpot,
+    #[serde(alias = "always_winner")]
     AlwaysWinner,
+    #[serde(alias = "custom")]
     Custom,
+    #[serde(alias = "closest_fingerprint")]
     ClosestFingerprint,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ResolutionMode {
+    #[serde(alias = "always_winner")]
     AlwaysWinner,
+    #[serde(alias = "exact_only_with_rollover")]
     ExactOnlyWithRollover,
+    #[serde(alias = "closest_wins")]
     ClosestWins,
+    #[serde(alias = "closest_fingerprint")]
     ClosestFingerprint,
 }
 
@@ -60,7 +85,11 @@ pub const FINGERPRINT_TIER_BPS: [u32; 4] = [5500, 2000, 1000, 500];
 pub fn compute_ticket_fingerprint(seed_numbers: &[u16]) -> [u8; 32] {
     let mut sorted = seed_numbers.to_vec();
     sorted.sort_unstable();
-    let input = sorted.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(",");
+    let input = sorted
+        .iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
     let digest = Sha256::digest(input.as_bytes());
     let mut fp = [0u8; 32];
     fp.copy_from_slice(&digest);
@@ -103,7 +132,9 @@ pub fn count_classic_matches(ticket: &[u16], drawn: &[u16]) -> usize {
 pub fn derive_classic_numbers(fp_bytes: &[u8]) -> Vec<u16> {
     let mut numbers = Vec::with_capacity(6);
     for i in (0..fp_bytes.len()).step_by(2) {
-        if numbers.len() >= 6 { break; }
+        if numbers.len() >= 6 {
+            break;
+        }
         let raw = u16::from_be_bytes([fp_bytes[i], fp_bytes[i + 1]]);
         let number = (raw % CLASSIC_MAX) + GLOBAL_NUMBER_MIN;
         if !numbers.contains(&number) {
@@ -138,19 +169,54 @@ pub fn classic_prize_bps(matches: usize) -> u32 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LottoMint {
+    #[serde(alias = "li")]
     pub lotto_id: String,
+    #[serde(alias = "ti")]
     pub ticket_id: String,
+    #[serde(alias = "sn", default)]
     pub seed_numbers: Vec<u16>,
+    #[serde(alias = "lm", default)]
     pub luck_marks: Option<Vec<u16>>,
+    #[serde(alias = "tp", default)]
     pub tip_percent: u8,
 }
 
 pub fn try_parse_lotto_deploy(body: &[u8]) -> Option<LottoDeploy> {
-    serde_json::from_slice(body).ok()
+    let value = serde_json::from_slice::<serde_json::Value>(body).ok()?;
+    let protocol = value
+        .get("p")
+        .and_then(|v| v.as_str())
+        .unwrap_or("DogeLotto");
+    if protocol != "DogeLotto" && protocol != "dl" {
+        return None;
+    }
+    let op = value.get("op").and_then(|v| v.as_str()).unwrap_or("deploy");
+    if op != "deploy" && op != "d" {
+        return None;
+    }
+    serde_json::from_value(value).ok()
 }
 
 pub fn try_parse_lotto_mint(body: &[u8]) -> Option<LottoMint> {
-    serde_json::from_slice(body).ok()
+    let value = serde_json::from_slice::<serde_json::Value>(body).ok()?;
+    let protocol = value
+        .get("p")
+        .and_then(|v| v.as_str())
+        .unwrap_or("DogeLotto");
+    if protocol != "DogeLotto" && protocol != "dl" {
+        return None;
+    }
+    let op = value.get("op").and_then(|v| v.as_str()).unwrap_or("mint");
+    if op != "mint" && op != "m" {
+        return None;
+    }
+    let mut parsed: LottoMint = serde_json::from_value(value).ok()?;
+    if parsed.seed_numbers.is_empty() {
+        if let Some(marks) = parsed.luck_marks.clone() {
+            parsed.seed_numbers = marks;
+        }
+    }
+    Some(parsed)
 }
 
 pub fn validate_mint_against_deploy(_mint: &LottoMint, _deploy: &LottoDeploy) -> bool {
@@ -158,8 +224,12 @@ pub fn validate_mint_against_deploy(_mint: &LottoMint, _deploy: &LottoDeploy) ->
 }
 
 impl NumberConfig {
-    pub fn has_numbers(&self) -> bool { self.pick > 0 }
-    pub fn is_disabled(&self) -> bool { self.pick == 0 }
+    pub fn has_numbers(&self) -> bool {
+        self.pick > 0
+    }
+    pub fn is_disabled(&self) -> bool {
+        self.pick == 0
+    }
 }
 
 use rand::prelude::*;

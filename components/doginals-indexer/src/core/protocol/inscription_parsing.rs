@@ -1,4 +1,6 @@
-use doge_lotto::{LottoDeploy, LottoMint, try_parse_lotto_deploy, try_parse_lotto_mint};
+use crate::core::meta_protocols::lotto::{
+    try_parse_lotto_deploy, try_parse_lotto_mint, LottoDeploy, LottoMint,
+};
 use std::{collections::HashMap, str, str::FromStr};
 
 use bitcoin::{

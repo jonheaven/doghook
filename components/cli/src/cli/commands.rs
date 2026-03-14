@@ -281,6 +281,9 @@ pub struct LottoMintCommand {
     /// Comma-separated seed numbers. Must match deploy main drum pick/max constraints.
     #[clap(long)]
     pub seed_numbers: Option<String>,
+    /// Comma-separated luck marks. Alias for seed numbers in Ðeno.
+    #[clap(long)]
+    pub luck_marks: Option<String>,
     /// Optional immutable protocol developer tip percentage (0-10).
     #[clap(long, default_value = "0")]
     pub tip: u8,
