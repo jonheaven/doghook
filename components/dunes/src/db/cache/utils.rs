@@ -1,16 +1,16 @@
 // ...existing code...
-use tokio_postgres::Transaction;
-use bitcoin::{ScriptBuf, Address};
+use super::input_dune_balance::InputDuneBalance;
 use crate::db::cache::transaction_location::TransactionLocation;
-use std::collections::{HashMap, VecDeque};
+use crate::db::models::db_dune::DbDune;
+use crate::db::models::db_ledger_entry::DbLedgerEntry;
+use crate::db::models::db_ledger_operation::DbLedgerOperation;
+use crate::db::pg_get_input_dune_balances;
+use bitcoin::{Address, ScriptBuf};
 use dogecoin::{try_debug, try_warn, utils::Context};
 use doginals_parser::DuneId;
 use lru::LruCache;
-use super::input_dune_balance::InputDuneBalance;
-use crate::db::models::db_ledger_operation::DbLedgerOperation;
-use crate::db::models::db_ledger_entry::DbLedgerEntry;
-use crate::db::models::db_dune::DbDune;
-use crate::db::pg_get_input_dune_balances;
+use std::collections::{HashMap, VecDeque};
+use tokio_postgres::Transaction;
 // ...existing code...
 // ...existing code...
 // ...existing code...
@@ -190,7 +190,9 @@ pub fn move_dune_balance_to_output(
     let mut total_sent = 0;
     let mut senders = vec![];
     loop {
-        let Some(input_bal) = input_balances.pop_front() else { break; };
+        let Some(input_bal) = input_balances.pop_front() else {
+            break;
+        };
         let balance_taken = if amount == 0 {
             input_bal.balance
         } else {
@@ -325,53 +327,58 @@ mod test {
         fn ledger_writes_receive_before_send() {
             use bitcoin::Txid;
             // ...existing code...
-                let address = Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string());
-                let mut available_inputs = VecDeque::new();
-                let mut input1 = InputDuneBalance {
-                    dune_id: DuneId::new(840000, 25).unwrap(),
-                    balance: 1000,
-                    txid: Txid::from_raw_hash(bitcoin::hashes::sha256d::Hash::from_slice(&[0u8; 32]).unwrap()),
-                    vout: 0,
-                    address: address.clone(),
-                    block_height: 0,
-                    timestamp: 0,
-                };
-                available_inputs.push_back(input1);
-                let mut input2 = InputDuneBalance {
-                    dune_id: DuneId::new(840000, 25).unwrap(),
-                    balance: 1000,
-                    txid: Txid::from_raw_hash(bitcoin::hashes::sha256d::Hash::from_slice(&[0u8; 32]).unwrap()),
-                    vout: 0,
-                    address: None,
-                    block_height: 0,
-                    timestamp: 0,
-                };
-                available_inputs.push_back(input2);
-                let eligible_outputs = dummy_eligible_output();
-                let mut next_event_index = 0;
+            let address =
+                Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string());
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputDuneBalance {
+                dune_id: DuneId::new(840000, 25).unwrap(),
+                balance: 1000,
+                txid: Txid::from_raw_hash(
+                    bitcoin::hashes::sha256d::Hash::from_slice(&[0u8; 32]).unwrap(),
+                ),
+                vout: 0,
+                address: address.clone(),
+                block_height: 0,
+                timestamp: 0,
+            };
+            available_inputs.push_back(input1);
+            let mut input2 = InputDuneBalance {
+                dune_id: DuneId::new(840000, 25).unwrap(),
+                balance: 1000,
+                txid: Txid::from_raw_hash(
+                    bitcoin::hashes::sha256d::Hash::from_slice(&[0u8; 32]).unwrap(),
+                ),
+                vout: 0,
+                address: None,
+                block_height: 0,
+                timestamp: 0,
+            };
+            available_inputs.push_back(input2);
+            let eligible_outputs = dummy_eligible_output();
+            let mut next_event_index = 0;
 
-                let results = move_dune_balance_to_output(
-                    &TransactionLocation::dummy(),
-                    Some(0),
-                    &DuneId::new(840000, 25).unwrap(),
-                    &mut available_inputs,
-                    &eligible_outputs,
-                    0,
-                    &mut next_event_index,
-                    &Context::empty(),
-                );
+            let results = move_dune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(0),
+                &DuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                0,
+                &mut next_event_index,
+                &Context::empty(),
+            );
 
-                let receive = results.get(0).unwrap();
-                assert_eq!(receive.event_index.0, 0u32);
-                assert_eq!(receive.operation, DbLedgerOperation::Receive);
-                assert_eq!(receive.amount.unwrap().0, 2000u128);
-                // ...existing code...
-                let send = results.get(1).unwrap();
-                assert_eq!(send.event_index.0, 1u32);
-                assert_eq!(send.operation, DbLedgerOperation::Send);
-                assert_eq!(send.amount.unwrap().0, 1000u128);
-                assert_eq!(results.len(), 2);
-                assert_eq!(available_inputs.len(), 0);
+            let receive = results.get(0).unwrap();
+            assert_eq!(receive.event_index.0, 0u32);
+            assert_eq!(receive.operation, DbLedgerOperation::Receive);
+            assert_eq!(receive.amount.unwrap().0, 2000u128);
+            // ...existing code...
+            let send = results.get(1).unwrap();
+            assert_eq!(send.event_index.0, 1u32);
+            assert_eq!(send.operation, DbLedgerOperation::Send);
+            assert_eq!(send.amount.unwrap().0, 1000u128);
+            assert_eq!(results.len(), 2);
+            assert_eq!(available_inputs.len(), 0);
             assert_eq!(available_inputs.len(), 0);
         }
 
@@ -383,7 +390,10 @@ mod test {
             let mut input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: address.clone(),
                 block_height: 0,
@@ -416,7 +426,10 @@ mod test {
             let mut input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 5000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -454,7 +467,10 @@ mod test {
             let mut input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -490,7 +506,10 @@ mod test {
             let mut input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 6000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -500,7 +519,10 @@ mod test {
             let mut input2 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 2000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -510,7 +532,10 @@ mod test {
             let mut input3 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 2000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -552,7 +577,10 @@ mod test {
             let mut input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -587,7 +615,10 @@ mod test {
             let mut input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -620,7 +651,10 @@ mod test {
             let mut input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
-                txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                txid: Txid::from_str(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                )
+                .unwrap(),
                 vout: 0,
                 address: None,
                 block_height: 0,
@@ -748,7 +782,8 @@ mod test {
     mod input_balances {
         use std::num::NonZeroUsize;
 
-        use bitcoin::{OutPoint, TxIn, ScriptBuf, Sequence, Witness, Txid};
+        use bitcoin::Txid;
+        use dogecoin::types::{dogecoin::OutPoint, dogecoin::TxIn, TransactionIdentifier};
         use dogecoin::utils::Context;
         use doginals_parser::DuneId;
         use lru::LruCache;
@@ -767,12 +802,15 @@ mod test {
         async fn from_block_cache() {
             let inputs = vec![TxIn {
                 previous_output: OutPoint {
-                    txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                    txid: TransactionIdentifier::new(
+                        "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                    ),
                     vout: 1,
+                    value: 0,
+                    block_height: 0,
                 },
-                script_sig: ScriptBuf::new(),
-                sequence: Sequence(0),
-                witness: Witness::new(),
+                script_sig: String::new(),
+                sequence: 0,
             }];
             let dune_id = DuneId::new(840000, 25).unwrap();
             let block_output_cache = hashmap! {
@@ -817,12 +855,15 @@ mod test {
         async fn from_lru_cache() {
             let inputs = vec![TxIn {
                 previous_output: OutPoint {
-                    txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                    txid: TransactionIdentifier::new(
+                        "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                    ),
                     vout: 1,
+                    value: 0,
+                    block_height: 0,
                 },
-                script_sig: ScriptBuf::new(),
-                sequence: Sequence(0),
-                witness: Witness::new(),
+                script_sig: String::new(),
+                sequence: 0,
             }];
             let dune_id = DuneId::new(840000, 25).unwrap();
             let block_output_cache = hashmap! {};
@@ -863,12 +904,15 @@ mod test {
         async fn from_db() {
             let inputs = vec![TxIn {
                 previous_output: OutPoint {
-                    txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                    txid: TransactionIdentifier::new(
+                        "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                    ),
                     vout: 1,
+                    value: 0,
+                    block_height: 0,
                 },
-                script_sig: ScriptBuf::new(),
-                sequence: Sequence(0),
-                witness: Witness::new(),
+                script_sig: String::new(),
+                sequence: 0,
             }];
             let dune_id = DuneId::new(840000, 25).unwrap();
             let block_output_cache = hashmap! {};
@@ -917,12 +961,15 @@ mod test {
         async fn inputs_without_balances() {
             let inputs = vec![TxIn {
                 previous_output: OutPoint {
-                    txid: Txid::from_str("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b").unwrap(),
+                    txid: TransactionIdentifier::new(
+                        "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b",
+                    ),
                     vout: 1,
+                    value: 0,
+                    block_height: 0,
                 },
-                script_sig: ScriptBuf::new(),
-                sequence: Sequence(0),
-                witness: Witness::new(),
+                script_sig: String::new(),
+                sequence: 0,
             }];
             let block_output_cache = hashmap! {};
             let mut output_cache = LruCache::new(NonZeroUsize::new(1).unwrap());
