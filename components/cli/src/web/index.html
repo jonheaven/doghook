@@ -39,7 +39,7 @@
         lotto_id: ticket.lotto_id,
         ticket_id: ticket.ticket_id,
         seed_numbers: ticket.seed_numbers,
-        luck_marks: ticket.luck_marks || (ticket.lotto_id === "deno" ? ticket.seed_numbers : null),
+        luck_marks: ticket.luck_marks || (["deno","Ðeno"].includes(ticket.lotto_id) ? ticket.seed_numbers : null),
         minted_height: ticket.minted_height
       };
       const asJson = JSON.stringify(payload);
@@ -64,7 +64,7 @@
           <div><strong>Lotto:</strong> ${ticket.lotto_id}</div>
           <div><strong>Ticket:</strong> ${ticket.ticket_id}</div>
           <div><strong>Inscription:</strong> ${ticket.inscription_id}</div>
-          <div><strong>${ticket.lotto_id === "deno" ? "Luck Marks" : "Seed Numbers"}:</strong> ${((ticket.luck_marks||ticket.seed_numbers) || []).join(', ')}</div>
+          <div><strong>${["deno","Ðeno"].includes(ticket.lotto_id) ? "Luck Marks" : "Seed Numbers"}:</strong> ${((ticket.luck_marks||ticket.seed_numbers) || []).join(', ')}</div>
           <div id="printQr" class="qr"></div>
           <script>
             new QRCode(document.getElementById('printQr'), { text: ${JSON.stringify(qrText)}, width: 220, height: 220 });
@@ -131,7 +131,7 @@
               <div><strong>Lotto:</strong> ${ticket.lotto_id}</div>
               <div><strong>Ticket:</strong> ${ticket.ticket_id}</div>
               <div><strong>Inscription:</strong> ${ticket.inscription_id}</div>
-              <div><strong>${ticket.lotto_id === "deno" ? "Luck Marks" : "Seed"}:</strong> ${((ticket.luck_marks||ticket.seed_numbers) || []).join(', ')}</div>
+              <div><strong>${["deno","Ðeno"].includes(ticket.lotto_id) ? "Luck Marks" : "Seed"}:</strong> ${((ticket.luck_marks||ticket.seed_numbers) || []).join(', ')}</div>
               <div class="actions">
                 <button data-print="1">Print Ticket</button>
                 <button data-burn="1">Burn Ticket</button>
