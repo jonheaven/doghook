@@ -1573,6 +1573,7 @@ fn is_deno_lotto(lotto_id: &str) -> bool {
 
 fn normalize_template(value: &str) -> Result<&'static str, String> {
     match value {
+        "deno" | "Ðeno" => Ok("custom"),
         "closest_wins" => Ok("closest_wins"),
         "powerball_dual_drum" => Ok("powerball_dual_drum"),
         "6_49_classic" => Ok("6_49_classic"),
@@ -1581,7 +1582,7 @@ fn normalize_template(value: &str) -> Result<&'static str, String> {
         "life_annuity" => Ok("life_annuity"),
         "custom" => Ok("custom"),
         _ => Err(format!(
-            "invalid template: {} (expected closest_wins, powerball_dual_drum, 6_49_classic, rollover_jackpot, always_winner, life_annuity, or custom)",
+            "invalid template: {} (expected deno, closest_wins, powerball_dual_drum, 6_49_classic, rollover_jackpot, always_winner, life_annuity, or custom)",
             value
         )),
     }
