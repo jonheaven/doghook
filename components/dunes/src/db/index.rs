@@ -1,20 +1,20 @@
 // ...existing code...
+use super::{cache::index_cache::IndexCache, pg_get_max_dune_number, pg_roll_back_block};
 use bitcoin::hashes::Hash;
-use dogecoin::utils::Context;
-use std::collections::HashMap;
-use bitcoin::{Amount, ScriptBuf, Network, Transaction};
 use bitcoin::{
     absolute::LockTime,
     transaction::{TxOut, Version},
 };
+use bitcoin::{Amount, Network, ScriptBuf, Transaction};
 use deadpool_postgres::Client;
+use dogecoin::utils::Context;
 use dogecoin::{
     try_info,
     types::{DogecoinBlockData, DogecoinTransactionData},
 };
 use doginals_parser::{Artifact, Dunestone, Flaw};
 use postgres::pg_begin;
-use super::{cache::index_cache::IndexCache, pg_get_max_dune_number, pg_roll_back_block};
+use std::collections::HashMap;
 
 // Use types from dogecoin::types
 // ...existing code...
@@ -79,7 +79,9 @@ fn bitcoin_tx_from_chainhook_tx(
     for input in tx.metadata.inputs.iter() {
         inputs.push(bitcoin::TxIn {
             previous_output: bitcoin::OutPoint {
-                    txid: bitcoin::Txid::from_raw_hash(Hash::from_slice(&input.previous_output.txid.get_hash_bytes()).unwrap()),
+                txid: bitcoin::Txid::from_raw_hash(
+                    Hash::from_slice(&input.previous_output.txid.get_hash_bytes()).unwrap(),
+                ),
                 vout: input.previous_output.vout,
             },
             script_sig: bitcoin::ScriptBuf::from_bytes(input.script_sig.as_bytes().to_vec()),
@@ -278,14 +280,13 @@ pub async fn roll_back_block(pg_client: &mut Client, block_height: u64, ctx: &Co
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-    use bitcoin::{ScriptBuf, Sequence, Witness, Amount, Txid};
-    use dogecoin::types::{
-        BlockIdentifier,
-        DogecoinBlockData, DogecoinTransactionData, TransactionIdentifier,
-        DogecoinBlockMetadata, DogecoinTransactionMetadata
-    };
     use super::{RosettaOutPoint, RosettaTxIn, RosettaTxOut};
+    use bitcoin::{Amount, ScriptBuf, Sequence, Txid, Witness};
+    use dogecoin::types::{
+        BlockIdentifier, DogecoinBlockData, DogecoinBlockMetadata, DogecoinTransactionData,
+        DogecoinTransactionMetadata, TransactionIdentifier,
+    };
+    use std::str::FromStr;
     // Use local types
     use doginals_parser::Artifact;
 
@@ -312,7 +313,10 @@ mod tests {
     fn build_valid_tx() -> DogecoinTransactionData {
         // txid: 3a11c5bc4eee38645934607ba63e0d7ac834d399e53c7c06a0ced093a711f1a2
         let prevout = RosettaOutPoint {
-            txid: Txid::from_str("1cf46d1a3192e5cdcce62441a7a40691ed4f7e34dc97dd3bfc7f96ff2069846e").unwrap(),
+            txid: Txid::from_str(
+                "1cf46d1a3192e5cdcce62441a7a40691ed4f7e34dc97dd3bfc7f96ff2069846e",
+            )
+            .unwrap(),
             vout: 0,
         };
         let inputs = vec![RosettaTxIn {
@@ -357,8 +361,9 @@ mod tests {
         // txid: 66d084fe5e206c7183293d1e379caa2011e7750018c65dfd2fd3174ea9f298fc
         let prevout = RosettaOutPoint {
             txid: Txid::from_str(
-                "871fb5e4042dca1549326da5848bd2257d6e609984a0cfb867e4ff24a56806d0"
-            ).unwrap(),
+                "871fb5e4042dca1549326da5848bd2257d6e609984a0cfb867e4ff24a56806d0",
+            )
+            .unwrap(),
             vout: 0,
         };
 
@@ -372,12 +377,20 @@ mod tests {
         let outputs = vec![
             RosettaTxOut {
                 // vout 0 - OP_RETURN dunestone
-                script_pubkey: ScriptBuf::from_bytes(hex::decode("6a5d1b020304cfb4c2acf497b13e0380068094ebdc030a8094ebdc030801").unwrap()),
+                script_pubkey: ScriptBuf::from_bytes(
+                    hex::decode("6a5d1b020304cfb4c2acf497b13e0380068094ebdc030a8094ebdc030801")
+                        .unwrap(),
+                ),
                 value: Amount::from_sat(0),
             },
             RosettaTxOut {
                 // vout 1 - p2tr
-                script_pubkey: ScriptBuf::from_bytes(hex::decode("5120f1e73bbd97fd0eac833e781abdbea9c223951aede9e2275ac6c03e8c1b24394b").unwrap()),
+                script_pubkey: ScriptBuf::from_bytes(
+                    hex::decode(
+                        "5120f1e73bbd97fd0eac833e781abdbea9c223951aede9e2275ac6c03e8c1b24394b",
+                    )
+                    .unwrap(),
+                ),
                 value: Amount::from_sat(546),
             },
             RosettaTxOut {
@@ -405,18 +418,21 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn build_no_commit_tx() -> DogecoinTransactionData {
         // txid: 27bbb1f7776d3ac5f41c17a5cde59b4feba5e9f5c5e76f19559c787a7c771055
         let prevout0 = RosettaOutPoint {
             txid: Txid::from_str(
-                "99060f5739abacbe53f568723d829cbef21b65d555950cfacf85baf78fc3724d"
-            ).unwrap(),
+                "99060f5739abacbe53f568723d829cbef21b65d555950cfacf85baf78fc3724d",
+            )
+            .unwrap(),
             vout: 0,
         };
         let prevout1 = RosettaOutPoint {
             txid: Txid::from_str(
-                "99060f5739abacbe53f568723d829cbef21b65d555950cfacf85baf78fc3724d"
-            ).unwrap(),
+                "99060f5739abacbe53f568723d829cbef21b65d555950cfacf85baf78fc3724d",
+            )
+            .unwrap(),
             vout: 1,
         };
 
@@ -470,20 +486,22 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn build_dune_wrong_flaw_tx() -> DogecoinTransactionData {
         // txid: 8bf9d4ec8ed69ae7bac256285b06ae6566cec4679dcfb45b5671a323c2f18c3c
         let prevout = RosettaOutPoint {
             txid: Txid::from_str(
-                "bd546ac9aa0e275a7f06a960a54db0a9c0de634ad71805cb2d10418b3befc8e8"
-            ).unwrap(),
-            vout: 0
+                "bd546ac9aa0e275a7f06a960a54db0a9c0de634ad71805cb2d10418b3befc8e8",
+            )
+            .unwrap(),
+            vout: 0,
         };
 
         let inputs = vec![RosettaTxIn {
             previous_output: prevout,
             script_sig: ScriptBuf::new(),
             sequence: 4_294_967_293,
-            witness: Witness::default()
+            witness: Witness::default(),
         }];
 
         let outputs = vec![
@@ -526,21 +544,23 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn build_internetgold_tx() -> DogecoinTransactionData {
         // txid: 66d084fe5e206c7183293d1e379caa2011e7750018c65dfd2fd3174ea9f298fc
         // This is the INTERNETGOLD transaction with truncated LEB128 field
         let prevout = RosettaOutPoint {
             txid: Txid::from_str(
-                "871fb5e4042dca1549326da5848bd2257d6e609984a0cfb867e4ff24a56806d0"
-            ).unwrap(),
-            vout: 0
+                "871fb5e4042dca1549326da5848bd2257d6e609984a0cfb867e4ff24a56806d0",
+            )
+            .unwrap(),
+            vout: 0,
         };
 
         let inputs = vec![RosettaTxIn {
             previous_output: prevout,
             script_sig: ScriptBuf::new(),
             sequence: 4_294_967_293,
-            witness: Witness::default()
+            witness: Witness::default(),
         }];
 
         let outputs = vec![
@@ -580,27 +600,31 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn build_elonmuskdoge_tx() -> DogecoinTransactionData {
         // txid: 89e8149d38f8b702621fa18310b10794e541c0b52478466b85f156f5622b8fe3
         // This is the ELONMUSKDOGE transaction
         let prevout = RosettaOutPoint {
             txid: Txid::from_str(
-                "de6c56ecf9212e8946c71267108cce91ccc71d378b55aa6a1f41a3d93a82e8cb"
-            ).unwrap(),
-            vout: 0
+                "de6c56ecf9212e8946c71267108cce91ccc71d378b55aa6a1f41a3d93a82e8cb",
+            )
+            .unwrap(),
+            vout: 0,
         };
 
         let inputs = vec![RosettaTxIn {
             previous_output: prevout,
             script_sig: ScriptBuf::new(),
             sequence: 4_294_967_293,
-            witness: Witness::default()
+            witness: Witness::default(),
         }];
 
         let outputs = vec![
             RosettaTxOut {
                 // vout 0 - OP_RETURN dunestone
-                script_pubkey:"0x6a5d1f020304c6e6ffe9888ae1230300054506a096800ac0de810a08e80710f2a233".to_string(),
+                script_pubkey:
+                    "0x6a5d1f020304c6e6ffe9888ae1230300054506a096800ac0de810a08e80710f2a233"
+                        .to_string(),
                 value: 0,
             },
             RosettaTxOut {
@@ -633,13 +657,15 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn build_whataremfers_tx() -> DogecoinTransactionData {
         // txid: c075c5eba59ca77c40085fc417c8adafa9d2c9970158c7311d60fb24e00d4b45
         // This is the WHATAREMFERS transaction
         let prevout = RosettaOutPoint {
             txid: Txid::from_str(
-                "ee637d9afdaabd9d5fb64fb8bb0396b69b12c6d1f150a00a9692f3bc09c5f6e5"
-            ).unwrap(),
+                "ee637d9afdaabd9d5fb64fb8bb0396b69b12c6d1f150a00a9692f3bc09c5f6e5",
+            )
+            .unwrap(),
             vout: 0,
         };
 
@@ -647,7 +673,7 @@ mod tests {
             previous_output: prevout,
             script_sig: ScriptBuf::new(),
             sequence: 4_294_967_293,
-            witness: Witness::default()
+            witness: Witness::default(),
         }];
 
         let outputs = vec![
@@ -756,13 +782,13 @@ mod tests {
 
     #[test]
     fn invalid_varint_payload_yields_cenotaph_without_etching() {
-        use bitcoin::{script::Builder};
+        use bitcoin::script::Builder;
 
         // Construct an OP_RETURN | MAGIC_NUMBER script with a single push containing an invalid varint
         // 19 bytes with MSB set triggers varint error (overflow/truncated)
         let payload = vec![0x80u8; 19];
         let push: &bitcoin::script::PushBytes = payload.as_slice().try_into().unwrap();
-        let script = Builder::new()
+        let _script = Builder::new()
             .push_opcode(bitcoin::opcodes::all::OP_RETURN)
             .push_slice(push)
             .into_script();

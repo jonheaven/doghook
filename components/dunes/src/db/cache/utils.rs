@@ -330,7 +330,7 @@ mod test {
             let address =
                 Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string());
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
                 txid: Txid::from_raw_hash(
@@ -342,7 +342,7 @@ mod test {
                 timestamp: 0,
             };
             available_inputs.push_back(input1);
-            let mut input2 = InputDuneBalance {
+            let input2 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
                 txid: Txid::from_raw_hash(
@@ -387,7 +387,7 @@ mod test {
             let address =
                 Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string());
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
                 txid: Txid::from_str(
@@ -423,7 +423,7 @@ mod test {
         #[test]
         fn moves_partial_input_balance() {
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 5000,
                 txid: Txid::from_str(
@@ -464,7 +464,7 @@ mod test {
         #[test]
         fn moves_insufficient_input_balance() {
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
                 txid: Txid::from_str(
@@ -503,7 +503,7 @@ mod test {
         #[test]
         fn moves_all_remaining_balance() {
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 6000,
                 txid: Txid::from_str(
@@ -516,7 +516,7 @@ mod test {
                 timestamp: 0,
             };
             available_inputs.push_back(input1);
-            let mut input2 = InputDuneBalance {
+            let input2 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 2000,
                 txid: Txid::from_str(
@@ -529,7 +529,7 @@ mod test {
                 timestamp: 0,
             };
             available_inputs.push_back(input2);
-            let mut input3 = InputDuneBalance {
+            let input3 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 2000,
                 txid: Txid::from_str(
@@ -574,7 +574,7 @@ mod test {
         #[test]
         fn move_to_output_with_address_failure_is_burned() {
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
                 txid: Txid::from_str(
@@ -612,7 +612,7 @@ mod test {
         #[test]
         fn move_to_nonexistent_output_is_burned() {
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
                 txid: Txid::from_str(
@@ -648,7 +648,7 @@ mod test {
         #[test]
         fn send_not_generated_on_minted_balance() {
             let mut available_inputs = VecDeque::new();
-            let mut input1 = InputDuneBalance {
+            let input1 = InputDuneBalance {
                 dune_id: DuneId::new(840000, 25).unwrap(),
                 balance: 1000,
                 txid: Txid::from_str(
