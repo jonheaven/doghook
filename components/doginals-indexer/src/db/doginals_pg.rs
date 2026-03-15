@@ -661,8 +661,8 @@ async fn update_sat_rarity_counts<T: GenericClient>(
     client
         .query(
             &format!(
-                "INSERT INTO counts_by_sat_rarity (rarity, count) VALUES {}
-                ON CONFLICT (rarity) DO UPDATE SET count = counts_by_sat_rarity.count + EXCLUDED.count",
+                "INSERT INTO counts_by_koinu_rarity (rarity, count) VALUES {}
+                ON CONFLICT (rarity) DO UPDATE SET count = counts_by_koinu_rarity.count + EXCLUDED.count",
                 utils::multi_row_query_param_str(counts.len(), 2)
             ),
             &params,
@@ -976,12 +976,12 @@ pub async fn rollback_block<T: GenericClient>(block_height: u64, client: &T) -> 
                 SELECT rarity, COUNT(*) FROM satoshi_deletes GROUP BY rarity
             ),
             rarity_count_updates AS (
-                UPDATE counts_by_sat_rarity SET count = (
-                    SELECT counts_by_sat_rarity.count - count
+                UPDATE counts_by_koinu_rarity SET count = (
+                    SELECT counts_by_koinu_rarity.count - count
                     FROM deleted_satoshi_rarity
-                    WHERE deleted_satoshi_rarity.rarity = counts_by_sat_rarity.rarity
+                    WHERE deleted_satoshi_rarity.rarity = counts_by_koinu_rarity.rarity
                 )
-                WHERE EXISTS (SELECT 1 FROM deleted_satoshi_rarity WHERE deleted_satoshi_rarity.rarity = counts_by_sat_rarity.rarity)
+                WHERE EXISTS (SELECT 1 FROM deleted_satoshi_rarity WHERE deleted_satoshi_rarity.rarity = counts_by_koinu_rarity.rarity)
             ),
             current_location_deletes AS (
                 DELETE FROM current_locations WHERE doginal_number IN (SELECT doginal_number FROM affected_sats)
@@ -3746,7 +3746,7 @@ mod test {
     async fn get_sat_rarity_count<T: GenericClient>(rarity: &str, client: &T) -> i32 {
         let row = client
             .query_opt(
-                "SELECT COALESCE(count, 0) AS count FROM counts_by_sat_rarity WHERE rarity = $1",
+                "SELECT COALESCE(count, 0) AS count FROM counts_by_koinu_rarity WHERE rarity = $1",
                 &[&rarity],
             )
             .await

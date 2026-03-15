@@ -894,7 +894,7 @@ async fn detect_lotto_burns<T: deadpool_postgres::GenericClient>(
         .query(
             "SELECT DISTINCT it.inscription_id, it.block_height, l.tx_id
              FROM inscription_transfers it
-             JOIN lotto_tickets lt ON it.inscription_id = lt.inscription_id
+             JOIN dogelotto_tickets lt ON it.inscription_id = lt.inscription_id
              JOIN locations l ON l.doginal_number = it.doginal_number
                               AND l.block_height = it.block_height
                               AND l.tx_index = it.tx_index

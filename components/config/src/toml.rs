@@ -195,6 +195,28 @@ impl ConfigToml {
             .read_to_end(&mut file_buffer)
             .map_err(|e| format!("unable to read file {}\n{:?}", file_path, e))?;
 
+        // Strip any `start_block = ` lines that have no value — TOML rejects empty
+        // values as a syntax error, so treat them the same as a commented-out line.
+        let file_buffer = {
+            let src = String::from_utf8_lossy(&file_buffer);
+            let cleaned = src
+                .lines()
+                .map(|line| {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("start_block")
+                        && trimmed.contains('=')
+                        && trimmed.splitn(2, '=').nth(1).map(|v| v.trim().is_empty()).unwrap_or(false)
+                    {
+                        format!("# {}", line)
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            cleaned.into_bytes()
+        };
+
         let config_file: ConfigToml = match toml::from_slice(&file_buffer) {
             Ok(s) => s,
             Err(e) => {

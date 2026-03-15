@@ -235,8 +235,10 @@ pub fn refresh_index_copy(live_index: &Path, copy_dir: &Path) -> Result<(u32, u3
         let name_str = name.to_string_lossy();
         if name == OsStr::new("LOCK")
             || name == OsStr::new("CURRENT")
+            || name_str.starts_with("LOCK")
             || name_str.starts_with("MANIFEST-")
             || name_str.ends_with(".log")
+            || name_str.ends_with(".temp")
         {
             skipped += 1;
             continue;

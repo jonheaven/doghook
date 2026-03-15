@@ -61,7 +61,7 @@ zmq_url = "tcp://127.0.0.1:28332"
 # Path to Dogecoin blockchain data directory for faster .blk file indexing (5-20× faster than RPC)
 # DOGECOIN_DATA_DIR is the primary source of truth for Dogecoin Core's data dir.
 # When unset, kabosu auto-detects the platform default Dogecoin data directory.
-# dogecoin_data_dir = "F:\\DogecoinData"
+dogecoin_data_dir = "F:\\DogecoinData"
 # Optional override for the shadow copy location. Leave unset to keep the copy
 # inside the active Dogecoin network data dir (for example F:\DogecoinData\blk-index).
 # blk_index_copy_dir = "F:\\DogecoinData\\blk-index"
@@ -126,7 +126,7 @@ urls = ["https://wzrd.dog/api/kabosu-webhook"]
 # Override the default start height for targeted testing.
 # Wipe data/ and all Postgres databases before changing this.
 # Block 4,849,900 is a good spot with DRC-20, DNS, and Dogemap inscriptions nearby.
-# start_block = 4849900
+start_block = 
 
 # Resource configuration
 [resources]
