@@ -5,10 +5,8 @@ use bitcoin::{Network, ScriptBuf};
 use config::{Config, DogecoinConfig};
 use deadpool_postgres::{Pool, Transaction};
 use dogecoin::{
-    bitcoincore_rpc::Client as BitcoinRpcClient,
-    try_debug, try_error, try_warn,
-    types::dogecoin::TxIn,
-    utils::Context,
+    bitcoincore_rpc::Client as BitcoinRpcClient, try_debug, try_error, try_warn,
+    types::dogecoin::TxIn, utils::Context,
 };
 // ...existing code...
 use doginals_parser::{Cenotaph, Dune, DuneId, Dunestone, Edict, Etching, Height};
@@ -25,10 +23,10 @@ use crate::db::{
         dune_validation::dune_etching_has_valid_commit, utils::input_dune_balances_from_tx_inputs,
     },
     models::{
-        db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry,
-        db_ledger_operation::DbLedgerOperation, db_dune::DbDune, db_supply_change::DbSupplyChange,
+        db_balance_change::DbBalanceChange, db_dune::DbDune, db_ledger_entry::DbLedgerEntry,
+        db_ledger_operation::DbLedgerOperation, db_supply_change::DbSupplyChange,
     },
-    pg_get_max_dune_number, pg_get_dune_by_id, pg_get_dune_total_mints,
+    pg_get_dune_by_id, pg_get_dune_total_mints, pg_get_max_dune_number,
 };
 
 /// Holds dune data across multiple blocks for faster computations. Processes dune events as they happen during transactions and
@@ -582,6 +580,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires a local postgres instance for Transaction setup"]
     async fn apply_etching_skips_with_early_returns() {
         // Minimal IndexCache without hitting DB in constructor
         let ctx = Context::empty();

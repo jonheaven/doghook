@@ -1,16 +1,17 @@
 // ...existing code...
-use std::collections::{HashMap, VecDeque};
-use dogecoin::{try_debug, try_warn, utils::Context};
-use crate::db::DbLedgerEntry;
-use crate::db::models::db_ledger_operation::DbLedgerOperation;
-use crate::db::models::db_dune::DbDune;
 use crate::db::cache::input_dune_balance::InputDuneBalance;
 use crate::db::cache::transaction_location::TransactionLocation;
-use crate::db::cache::utils::{is_dune_mintable, move_dune_balance_to_output, new_sequential_ledger_entry};
-use doginals_parser::{Etching, Dune, Edict};
+use crate::db::cache::utils::{
+    is_dune_mintable, move_dune_balance_to_output, new_sequential_ledger_entry,
+};
+use crate::db::models::db_dune::DbDune;
+use crate::db::models::db_ledger_operation::DbLedgerOperation;
+use crate::db::DbLedgerEntry;
 use bitcoin::ScriptBuf;
+use dogecoin::{try_debug, try_warn, utils::Context};
 use doginals_parser::DuneId;
-
+use doginals_parser::{Dune, Edict, Etching};
+use std::collections::{HashMap, VecDeque};
 
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
@@ -65,7 +66,10 @@ impl TransactionCache {
     }
 
     /// Burns the dune balances input to this transaction.
-    pub fn apply_cenotaph_input_burn(&mut self, _cenotaph: &doginals_parser::Cenotaph) -> Vec<DbLedgerEntry> {
+    pub fn apply_cenotaph_input_burn(
+        &mut self,
+        _cenotaph: &doginals_parser::Cenotaph,
+    ) -> Vec<DbLedgerEntry> {
         let mut results = vec![];
         for (dune_id, unallocated) in self.input_dunes.iter() {
             for balance in unallocated {
@@ -131,11 +135,13 @@ impl TransactionCache {
                 InputDuneBalance {
                     dune_id: dune_id.clone(),
                     balance: premine,
-                    txid: bitcoin::Txid::from_raw_hash(bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap()),
+                    txid: bitcoin::Txid::from_raw_hash(
+                        bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap(),
+                    ),
                     vout: 0,
                     address: None,
-                        block_height: self.location.block_height as u32,
-                        timestamp: self.location.timestamp as u64,
+                    block_height: self.location.block_height as u32,
+                    timestamp: self.location.timestamp as u64,
                 },
             );
         }
@@ -202,11 +208,13 @@ impl TransactionCache {
             InputDuneBalance {
                 dune_id: dune_id.clone(),
                 balance: terms_amount.0,
-                txid: bitcoin::Txid::from_raw_hash(bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap()),
+                txid: bitcoin::Txid::from_raw_hash(
+                    bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap(),
+                ),
                 vout: 0,
                 address: None,
                 block_height: self.location.block_height as u32,
-                    timestamp: self.location.timestamp as u64,
+                timestamp: self.location.timestamp as u64,
             },
         );
         Some(new_sequential_ledger_entry(
@@ -406,17 +414,16 @@ impl TransactionCache {
             self.input_dunes.insert(*dune_id, vec);
         }
     }
-
 }
 // End of impl TransactionCache
 
 #[cfg(test)]
 mod test {
-    use std::collections::VecDeque;
     use bitcoin::ScriptBuf;
     use dogecoin::utils::Context;
     use doginals_parser::{Dune, Edict, Etching, Terms};
     use maplit::hashmap;
+    use std::collections::VecDeque;
 
     use super::TransactionCache;
     use crate::db::{
@@ -424,7 +431,7 @@ mod test {
             input_dune_balance::InputDuneBalance, transaction_location::TransactionLocation,
             utils::is_dune_mintable,
         },
-        models::{db_ledger_operation::DbLedgerOperation, db_dune::DbDune},
+        models::{db_dune::DbDune, db_ledger_operation::DbLedgerOperation},
     };
 
     #[test]
@@ -454,6 +461,8 @@ mod test {
         assert_eq!(db_dune.number.0, 1);
         assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
         assert_eq!(db_ledger_entry.dune_id, "840000:0");
+    }
+
     #[test]
     fn test_apply_etching_reserved_dune() {
         let location = TransactionLocation::dummy();
@@ -480,7 +489,6 @@ mod test {
 
         assert_eq!(db_dune.name, expected_reserved_name);
         assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
-    }
     }
 
     #[test]
@@ -576,7 +584,9 @@ mod test {
         balances.push_back(InputDuneBalance {
             dune_id: dune_id.clone(),
             balance: 1000,
-            txid: bitcoin::Txid::from_raw_hash(bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap()),
+            txid: bitcoin::Txid::from_raw_hash(
+                bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap(),
+            ),
             vout: 0,
             address: Some(sender_address.clone()),
             block_height: location.block_height as u32,
@@ -619,7 +629,9 @@ mod test {
             address: Some(sender_address.clone()),
             balance: 1000,
             dune_id: dune_id.clone(),
-            txid: bitcoin::Txid::from_raw_hash(bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap()),
+            txid: bitcoin::Txid::from_raw_hash(
+                bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap(),
+            ),
             vout: 0,
             block_height: 0,
             timestamp: 0,
@@ -655,7 +667,9 @@ mod test {
             address: Some(sender_address.clone()),
             balance: 1000,
             dune_id: dune_id.clone(),
-            txid: bitcoin::Txid::from_raw_hash(bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap()),
+            txid: bitcoin::Txid::from_raw_hash(
+                bitcoin::hashes::Hash::from_slice(&[0u8; 32]).unwrap(),
+            ),
             vout: 0,
             block_height: 0,
             timestamp: 0,
