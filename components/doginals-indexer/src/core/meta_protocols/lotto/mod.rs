@@ -54,6 +54,7 @@ pub enum LottoTemplate {
     #[serde(alias = "always_winner")]
     AlwaysWinner,
     #[serde(alias = "custom")]
+    #[serde(alias = "deno")]
     Custom,
     #[serde(alias = "closest_fingerprint")]
     ClosestFingerprint,
@@ -150,7 +151,41 @@ pub fn derive_classic_drawn_numbers(block_hash: &str) -> Vec<u16> {
     derive_classic_numbers(&bytes)
 }
 
-pub fn derive_draw_for_deploy(block_hash: &str, _deploy: &LottoDeploy) -> LottoDraw {
+fn is_deno_lotto(lotto_id: &str) -> bool {
+    lotto_id.eq_ignore_ascii_case("deno") || lotto_id == "Ðeno"
+}
+
+fn derive_unique_numbers_from_hash(block_hash: &str, pick: usize, max: u16) -> Vec<u16> {
+    let mut out = Vec::with_capacity(pick);
+    let mut counter: u32 = 0;
+    while out.len() < pick {
+        let input = format!("{}:{}", block_hash, counter);
+        let digest = Sha256::digest(input.as_bytes());
+        for chunk in digest.chunks_exact(2) {
+            if out.len() >= pick {
+                break;
+            }
+            let raw = u16::from_be_bytes([chunk[0], chunk[1]]);
+            let value = (raw % max) + GLOBAL_NUMBER_MIN;
+            if !out.contains(&value) {
+                out.push(value);
+            }
+        }
+        counter = counter.saturating_add(1);
+    }
+    out.sort_unstable();
+    out
+}
+
+pub fn derive_draw_for_deploy(block_hash: &str, deploy: &LottoDeploy) -> LottoDraw {
+    if is_deno_lotto(&deploy.lotto_id) {
+        let main = derive_unique_numbers_from_hash(block_hash, 20, deploy.main_numbers.max.max(20));
+        return LottoDraw {
+            main_numbers: main,
+            bonus_numbers: vec![],
+        };
+    }
+
     let main = derive_classic_drawn_numbers(block_hash);
     LottoDraw {
         main_numbers: main,
@@ -219,8 +254,33 @@ pub fn try_parse_lotto_mint(body: &[u8]) -> Option<LottoMint> {
     Some(parsed)
 }
 
-pub fn validate_mint_against_deploy(_mint: &LottoMint, _deploy: &LottoDeploy) -> bool {
-    true // TODO: real validation later
+pub fn validate_mint_against_deploy(mint: &LottoMint, deploy: &LottoDeploy) -> bool {
+    if mint.seed_numbers.len() != deploy.main_numbers.pick as usize {
+        return false;
+    }
+    let mut sorted = mint.seed_numbers.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    if sorted.len() != deploy.main_numbers.pick as usize {
+        return false;
+    }
+    if sorted
+        .iter()
+        .any(|number| *number < GLOBAL_NUMBER_MIN || *number > deploy.main_numbers.max)
+    {
+        return false;
+    }
+    if is_deno_lotto(&deploy.lotto_id) {
+        if let Some(marks) = &mint.luck_marks {
+            let mut marks_sorted = marks.clone();
+            marks_sorted.sort_unstable();
+            marks_sorted.dedup();
+            if marks_sorted != sorted {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 impl NumberConfig {

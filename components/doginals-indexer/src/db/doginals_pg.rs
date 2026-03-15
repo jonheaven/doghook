@@ -1,4 +1,4 @@
-use crate::core::meta_protocols::dmp::{DmpListing, DmpBid, DmpSettle, DmpCancel};
+use crate::core::meta_protocols::dmp::{DmpBid, DmpCancel, DmpListing, DmpSettle};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bitcoin::ScriptBuf;
@@ -21,16 +21,16 @@ use super::models::{
 };
 use crate::core::meta_protocols::dogespells::{identity_hex, IndexedDogeSpellsSpell};
 
-use doge_lotto::{
-    classic_prize_bps, compute_ticket_fingerprint, count_classic_matches,
-    derive_classic_drawn_numbers, derive_classic_numbers, score_ticket,
-    u256_abs_diff, validate_mint_against_deploy,
-    LottoDeploy, LottoTemplate, NumberConfig, ResolutionMode, FINGERPRINT_TIER_BPS, LottoDraw, derive_draw_for_deploy,
-};
 use crate::core::protocol::{
     inscription_parsing::{ParsedLottoDeploy, ParsedLottoMint},
     koinu_numbering::TraversalResult,
     koinu_tracking::WatchedSatpoint,
+};
+use doge_lotto::{
+    classic_prize_bps, compute_ticket_fingerprint, count_classic_matches,
+    derive_classic_drawn_numbers, derive_classic_numbers, derive_draw_for_deploy, score_ticket,
+    u256_abs_diff, validate_mint_against_deploy, LottoDeploy, LottoDraw, LottoTemplate,
+    NumberConfig, ResolutionMode, FINGERPRINT_TIER_BPS,
 };
 
 embed_migrations!("../../migrations/doginals");
@@ -2171,6 +2171,35 @@ pub fn resolve_lottery_winners(
     net_prize_koinu: u64,
     block_hash: &str,
 ) -> (Vec<LottoWinnerRow>, bool) {
+    if is_deno_lotto_id(&lottery.lotto_id) {
+        return match lottery.resolution_mode {
+            ResolutionMode::AlwaysWinner => resolve_deno_tier_winners(
+                lottery,
+                tickets,
+                draw,
+                resolved_height,
+                net_prize_koinu,
+                true,
+            ),
+            ResolutionMode::ClosestWins => resolve_deno_tier_winners(
+                lottery,
+                tickets,
+                draw,
+                resolved_height,
+                net_prize_koinu,
+                false,
+            ),
+            _ => resolve_deno_tier_winners(
+                lottery,
+                tickets,
+                draw,
+                resolved_height,
+                net_prize_koinu,
+                false,
+            ),
+        };
+    }
+
     match lottery.resolution_mode {
         ResolutionMode::AlwaysWinner => {
             if tickets.is_empty() {
@@ -2250,16 +2279,14 @@ pub fn resolve_lottery_winners(
                 .collect();
             (winner_rows, false)
         }
-        ResolutionMode::ClosestWins => {
-            resolve_closest_fingerprint_impl(
-                lottery,
-                tickets,
-                resolved_height,
-                net_prize_koinu,
-                draw,
-                block_hash,
-            )
-        }
+        ResolutionMode::ClosestWins => resolve_closest_fingerprint_impl(
+            lottery,
+            tickets,
+            resolved_height,
+            net_prize_koinu,
+            draw,
+            block_hash,
+        ),
         ResolutionMode::ClosestFingerprint => resolve_closest_fingerprint_impl(
             lottery,
             tickets,
@@ -2269,6 +2296,154 @@ pub fn resolve_lottery_winners(
             block_hash,
         ),
         // ...existing code...
+    }
+}
+
+fn resolve_deno_tier_winners(
+    lottery: &StoredLottoRow,
+    tickets: &[StoredTicketRow],
+    draw: &LottoDraw,
+    resolved_height: u64,
+    net_prize_koinu: u64,
+    force_winner: bool,
+) -> (Vec<LottoWinnerRow>, bool) {
+    if tickets.is_empty() {
+        return (Vec::new(), !force_winner);
+    }
+
+    let mut ranked: Vec<(StoredTicketRow, u8)> = tickets
+        .iter()
+        .map(|ticket| {
+            let matches = ticket
+                .seed_numbers
+                .iter()
+                .filter(|number| draw.main_numbers.contains(number))
+                .count() as u8;
+            (ticket.clone(), matches)
+        })
+        .collect();
+
+    let mut winners: Vec<LottoWinnerRow> = Vec::new();
+    let mut rank: u32 = 1;
+
+    for matches in (3..=10).rev() {
+        let tier_bps = deno_tier_bps(matches);
+        if tier_bps == 0 {
+            continue;
+        }
+        let tier_winners: Vec<_> = ranked
+            .iter()
+            .filter(|(_, m)| *m == matches)
+            .cloned()
+            .collect();
+        if tier_winners.is_empty() {
+            continue;
+        }
+
+        let tier_pool = net_prize_koinu.saturating_mul(tier_bps as u64) / 10_000;
+        let payouts = split_amount(tier_pool, tier_winners.len());
+        for ((ticket, ticket_matches), gross_payout_koinu) in tier_winners.into_iter().zip(payouts)
+        {
+            let tip_deduction_koinu =
+                gross_payout_koinu.saturating_mul(ticket.tip_percent as u64) / 100;
+            let payout_koinu = gross_payout_koinu.saturating_sub(tip_deduction_koinu);
+            winners.push(LottoWinnerRow {
+                lotto_id: lottery.lotto_id.clone(),
+                inscription_id: ticket.inscription_id,
+                ticket_id: ticket.ticket_id,
+                resolved_height,
+                rank,
+                score: ticket_matches as u64,
+                payout_bps: if net_prize_koinu > 0 {
+                    ((gross_payout_koinu.saturating_mul(10_000)) / net_prize_koinu) as u32
+                } else {
+                    0
+                },
+                gross_payout_koinu,
+                tip_percent: ticket.tip_percent,
+                tip_deduction_koinu,
+                payout_koinu,
+                seed_numbers: ticket.seed_numbers,
+                drawn_numbers: draw.main_numbers.clone(),
+                bonus_drawn_numbers: draw.bonus_numbers.clone(),
+                fingerprint_distance: None,
+                classic_matches: ticket_matches,
+                classic_payout_koinu: 0,
+            });
+            rank += 1;
+        }
+    }
+
+    if !winners.is_empty() {
+        return (winners, false);
+    }
+
+    if force_winner || matches!(lottery.resolution_mode, ResolutionMode::ClosestWins) {
+        ranked.sort_by(
+            |(left_ticket, left_matches), (right_ticket, right_matches)| {
+                right_matches
+                    .cmp(left_matches)
+                    .then_with(|| left_ticket.minted_height.cmp(&right_ticket.minted_height))
+                    .then_with(|| left_ticket.inscription_id.cmp(&right_ticket.inscription_id))
+            },
+        );
+        let Some(best_matches) = ranked.first().map(|(_, matches)| *matches) else {
+            return (Vec::new(), false);
+        };
+        let closest: Vec<_> = ranked
+            .into_iter()
+            .filter(|(_, matches)| *matches == best_matches)
+            .collect();
+        let payouts = split_amount(net_prize_koinu, closest.len());
+        let fallback_winners = closest
+            .into_iter()
+            .zip(payouts)
+            .map(|((ticket, ticket_matches), gross_payout_koinu)| {
+                let tip_deduction_koinu =
+                    gross_payout_koinu.saturating_mul(ticket.tip_percent as u64) / 100;
+                let payout_koinu = gross_payout_koinu.saturating_sub(tip_deduction_koinu);
+                LottoWinnerRow {
+                    lotto_id: lottery.lotto_id.clone(),
+                    inscription_id: ticket.inscription_id,
+                    ticket_id: ticket.ticket_id,
+                    resolved_height,
+                    rank: 1,
+                    score: ticket_matches as u64,
+                    payout_bps: if net_prize_koinu > 0 {
+                        ((gross_payout_koinu.saturating_mul(10_000)) / net_prize_koinu) as u32
+                    } else {
+                        0
+                    },
+                    gross_payout_koinu,
+                    tip_percent: ticket.tip_percent,
+                    tip_deduction_koinu,
+                    payout_koinu,
+                    seed_numbers: ticket.seed_numbers,
+                    drawn_numbers: draw.main_numbers.clone(),
+                    bonus_drawn_numbers: draw.bonus_numbers.clone(),
+                    fingerprint_distance: None,
+                    classic_matches: ticket_matches,
+                    classic_payout_koinu: 0,
+                }
+            })
+            .collect();
+        return (fallback_winners, false);
+    }
+
+    (Vec::new(), lottery.rollover_enabled)
+}
+
+fn deno_tier_bps(matches: u8) -> u32 {
+    match matches {
+        10 => 3_000,
+        9 => 2_500,
+        8 => 1_800,
+        7 => 1_200,
+        6 => 800,
+        5 => 400,
+        4 => 200,
+        3 => 100,
+        _ => 0,
     }
 }
 
@@ -2346,7 +2521,8 @@ fn resolve_closest_fingerprint_impl(
         for (offset, gross_payout_koinu) in per_ticket_payouts.into_iter().enumerate() {
             let fp_ticket = &fp_tickets[group_start + offset];
             let payout_bps = tier_bps_for_rank(prize_rank);
-            let tip_deduction_koinu = gross_payout_koinu.saturating_mul(fp_ticket.ticket.tip_percent as u64) / 100;
+            let tip_deduction_koinu =
+                gross_payout_koinu.saturating_mul(fp_ticket.ticket.tip_percent as u64) / 100;
             let payout_koinu = gross_payout_koinu.saturating_sub(tip_deduction_koinu);
 
             let classic_bps = classic_prize_bps(fp_ticket.classic_matches);
@@ -2711,6 +2887,10 @@ fn dogecoin_address_from_script(script: &ScriptBuf) -> Option<String> {
     }
 }
 
+fn is_deno_lotto_id(lotto_id: &str) -> bool {
+    lotto_id.eq_ignore_ascii_case("deno") || lotto_id == "Ðeno"
+}
+
 fn special_lotto_requires_zero_fee(lotto_id: &str) -> bool {
     matches!(lotto_id, "doge-69-420" | "doge-max" | "doge-4-20-flash")
 }
@@ -2736,7 +2916,7 @@ fn lotto_template_from_str(template: &str) -> Result<LottoTemplate, String> {
         "rollover_jackpot" => Ok(LottoTemplate::RolloverJackpot),
         "always_winner" => Ok(LottoTemplate::AlwaysWinner),
         "life_annuity" => Ok(LottoTemplate::LifeAnnuity),
-        "custom" => Ok(LottoTemplate::Custom),
+        "custom" | "deno" | "Ðeno" => Ok(LottoTemplate::Custom),
         "closest_fingerprint" => Ok(LottoTemplate::ClosestFingerprint),
         other => Err(format!("unknown lotto template: {other}")),
     }
@@ -3338,13 +3518,25 @@ pub async fn insert_dmp_ops<T: GenericClient>(
                 let nonce_str = l.nonce.to_string();
                 let block_height_str = parsed.block_height.to_string();
                 let block_timestamp_str = parsed.block_timestamp.to_string();
-                (price_koinu_str, expiry_height_str, nonce_str, block_height_str, block_timestamp_str)
+                (
+                    price_koinu_str,
+                    expiry_height_str,
+                    nonce_str,
+                    block_height_str,
+                    block_timestamp_str,
+                )
             })
             .collect();
 
         let mut all_values: Vec<String> = Vec::new();
         for (i, (l, _parsed)) in chunk.iter().enumerate() {
-            let (ref price_koinu_str, ref expiry_height_str, ref nonce_str, ref block_height_str, ref block_timestamp_str) = chunk_strings[i];
+            let (
+                ref price_koinu_str,
+                ref expiry_height_str,
+                ref nonce_str,
+                ref block_height_str,
+                ref block_timestamp_str,
+            ) = chunk_strings[i];
             all_values.push(l.inscription_id.clone());
             all_values.push(l.inscription_id.clone());
             all_values.push(l.seller.clone());
@@ -3356,7 +3548,10 @@ pub async fn insert_dmp_ops<T: GenericClient>(
             all_values.push(block_height_str.clone());
             all_values.push(block_timestamp_str.clone());
         }
-        let params: Vec<&(dyn ToSql + Sync)> = all_values.iter().map(|s| s as &(dyn ToSql + Sync)).collect();
+        let params: Vec<&(dyn ToSql + Sync)> = all_values
+            .iter()
+            .map(|s| s as &(dyn ToSql + Sync))
+            .collect();
         client
             .query(
                 &format!(
@@ -3383,13 +3578,25 @@ pub async fn insert_dmp_ops<T: GenericClient>(
                 let nonce_str = b.nonce.to_string();
                 let block_height_str = parsed.block_height.to_string();
                 let block_timestamp_str = parsed.block_timestamp.to_string();
-                (price_koinu_str, expiry_height_str, nonce_str, block_height_str, block_timestamp_str)
+                (
+                    price_koinu_str,
+                    expiry_height_str,
+                    nonce_str,
+                    block_height_str,
+                    block_timestamp_str,
+                )
             })
             .collect();
 
         let mut all_values: Vec<String> = Vec::new();
         for (i, (b, _parsed)) in chunk.iter().enumerate() {
-            let (ref price_koinu_str, ref expiry_height_str, ref nonce_str, ref block_height_str, ref block_timestamp_str) = chunk_strings[i];
+            let (
+                ref price_koinu_str,
+                ref expiry_height_str,
+                ref nonce_str,
+                ref block_height_str,
+                ref block_timestamp_str,
+            ) = chunk_strings[i];
             all_values.push(b.inscription_id.clone());
             all_values.push(b.listing_id.clone());
             all_values.push(b.bidder.clone());
@@ -3401,7 +3608,10 @@ pub async fn insert_dmp_ops<T: GenericClient>(
             all_values.push((**block_height_str).to_string());
             all_values.push((**block_timestamp_str).to_string());
         }
-        let params: Vec<&(dyn ToSql + Sync)> = all_values.iter().map(|s| s as &(dyn ToSql + Sync)).collect();
+        let params: Vec<&(dyn ToSql + Sync)> = all_values
+            .iter()
+            .map(|s| s as &(dyn ToSql + Sync))
+            .collect();
         client
             .query(
                 &format!(
@@ -3438,7 +3648,14 @@ pub async fn insert_dmp_ops<T: GenericClient>(
     }
     for chunk in settlements.chunks(500) {
         // Pre-collect all string conversions for the chunk to avoid lifetime issues
-        let chunk_strings: Vec<(Box<String>, Box<String>, Box<String>, Option<Box<String>>, Box<String>, Box<String>)> = chunk
+        let chunk_strings: Vec<(
+            Box<String>,
+            Box<String>,
+            Box<String>,
+            Option<Box<String>>,
+            Box<String>,
+            Box<String>,
+        )> = chunk
             .iter()
             .map(|(s, parsed)| {
                 let nonce_str = Box::new(s.nonce.to_string());
@@ -3446,13 +3663,27 @@ pub async fn insert_dmp_ops<T: GenericClient>(
                 let block_timestamp_str = Box::new(parsed.block_timestamp.to_string());
                 let bid_id_str = s.bid_id.clone().map(Box::new);
                 // Clone block_height_str and block_timestamp_str for reuse
-                (nonce_str, block_height_str.clone(), block_timestamp_str.clone(), bid_id_str, block_height_str.clone(), block_timestamp_str.clone())
+                (
+                    nonce_str,
+                    block_height_str.clone(),
+                    block_timestamp_str.clone(),
+                    bid_id_str,
+                    block_height_str.clone(),
+                    block_timestamp_str.clone(),
+                )
             })
             .collect();
 
         let mut all_values: Vec<String> = Vec::new();
         for (i, (s, _parsed)) in chunk.iter().enumerate() {
-            let (ref nonce_str, ref block_height_str, ref block_timestamp_str, ref bid_id_str, _, _) = chunk_strings[i];
+            let (
+                ref nonce_str,
+                ref block_height_str,
+                ref block_timestamp_str,
+                ref bid_id_str,
+                _,
+                _,
+            ) = chunk_strings[i];
             let bid_id_str_val = match bid_id_str {
                 Some(ref bid) => bid.clone(),
                 None => Box::new(String::new()),
@@ -3467,7 +3698,10 @@ pub async fn insert_dmp_ops<T: GenericClient>(
             all_values.push((**block_height_str).to_string());
             all_values.push((**block_timestamp_str).to_string());
         }
-        let params: Vec<&(dyn ToSql + Sync)> = all_values.iter().map(|s| s as &(dyn ToSql + Sync)).collect();
+        let params: Vec<&(dyn ToSql + Sync)> = all_values
+            .iter()
+            .map(|s| s as &(dyn ToSql + Sync))
+            .collect();
         client
             .query(
                 &format!(
@@ -3516,7 +3750,10 @@ pub async fn insert_dmp_ops<T: GenericClient>(
             all_values.push(block_height_str.clone());
             all_values.push(block_timestamp_str.clone());
         }
-        let params: Vec<&(dyn ToSql + Sync)> = all_values.iter().map(|s| s as &(dyn ToSql + Sync)).collect();
+        let params: Vec<&(dyn ToSql + Sync)> = all_values
+            .iter()
+            .map(|s| s as &(dyn ToSql + Sync))
+            .collect();
         client
             .query(
                 &format!(
