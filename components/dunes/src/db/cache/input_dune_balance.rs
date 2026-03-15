@@ -1,5 +1,5 @@
-use doginals_parser::DuneId;
 use bitcoin::Txid;
+use doginals_parser::DuneId;
 
 #[derive(Debug, Clone)]
 pub struct InputDuneBalance {
@@ -22,12 +22,16 @@ pub struct InputDuneBalance {
 #[cfg(test)]
 impl InputDuneBalance {
     pub fn dummy() -> Self {
+        use bitcoin::hashes::Hash;
+
         InputDuneBalance {
             dune_id: DuneId::default(),
             balance: 1000,
             txid: Txid::from_slice(&[0u8; 32]).unwrap(),
             vout: 0,
-            address: Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string()),
+            address: Some(
+                "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string(),
+            ),
             block_height: 0,
             timestamp: 0,
         }

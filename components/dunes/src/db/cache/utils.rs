@@ -302,6 +302,7 @@ mod test {
     mod move_balance {
         use std::collections::{HashMap, VecDeque};
 
+        use bitcoin::hashes::Hash;
         use bitcoin::ScriptBuf;
         use dogecoin::utils::Context;
         use doginals_parser::DuneId;
@@ -788,6 +789,7 @@ mod test {
         use doginals_parser::DuneId;
         use lru::LruCache;
         use maplit::hashmap;
+        use std::str::FromStr;
 
         use crate::db::cache::input_dune_balance::InputDuneBalance;
         // Removed unused import for TransactionLocation
@@ -994,6 +996,9 @@ mod test {
 
     mod cache_move {
         use std::num::NonZeroUsize;
+        use std::str::FromStr;
+
+        use bitcoin::Txid;
 
         use doginals_parser::DuneId;
         use lru::LruCache;
